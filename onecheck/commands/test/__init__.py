@@ -1,10 +1,17 @@
 import click
 
-@click.group()
-def cli():
-    pass
+def setup(di):
+    @click.group()
+    def cli():
+        pass
 
-@cli.command('test', help="hello command")
-@click.option('--test')
-def test(test):
-    click.echo(f'Test {test}!')
+    @cli.command('test', help="hello command")
+    @click.option('--test')
+    def test(test):
+        click.echo(f'Test {test}!')
+
+    instance = {
+        'cli': cli
+    }
+
+    return instance
