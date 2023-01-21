@@ -1,16 +1,21 @@
+"""
+demo
+"""
 import click
 
 from commands import hello, test
 
-di = {
-    'config': {
-        'version': '0.1.0'
-    }
-}
+from core import Config, Api
+
+config = Config()
+config.version = '0.1.0'
+
+api = Api()
+api.set_config(config)
 
 plugin_instances = [
-    hello.setup(di), 
-    test.setup(di)
+    hello.setup(api),
+    test.setup(api)
 ]
 
 cli = click.CommandCollection(sources=[i['cli'] for i in plugin_instances])

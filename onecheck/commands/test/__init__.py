@@ -1,5 +1,6 @@
 import click
 
+
 def setup(di):
     @click.group()
     def cli():
