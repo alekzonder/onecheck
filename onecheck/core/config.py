@@ -3,7 +3,7 @@ config class
 """
 
 
-class Config(object):
+class Config():
     """
     onecheck Config class
     """
