@@ -223,3 +223,20 @@ func TestLogrotateCommand(t *testing.T) {
 		t.Errorf("the fresh event must stay: %v", left)
 	}
 }
+
+func TestModuleListCommand(t *testing.T) {
+	_, cfg := setup(t, "", passRule)
+	code, out, errOut := execute("module", "list", "-c", cfg)
+	if code != 0 {
+		t.Fatalf("code=%d err=%q", code, errOut)
+	}
+	for _, want := range []string{"NAME", "command", "file", "yes", modDir} {
+		if !strings.Contains(out, want) {
+			t.Errorf("module list lacks %q:\n%s", want, out)
+		}
+	}
+	code, out, _ = execute("module", "list", "--modules-dir", t.TempDir())
+	if code != 0 || !strings.Contains(out, "no modules installed") {
+		t.Errorf("empty dir without a config: code=%d out=%q", code, out)
+	}
+}
