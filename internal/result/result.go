@@ -1,0 +1,73 @@
+// Package result defines the JSON contracts onecheck writes to disk and
+// prints: the result of one rule run and the state transition event.
+package result
+
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/alekzonder/onecheck/internal/match"
+)
+
+// Status is the raw outcome of one run of a rule.
+type Status string
+
+// Possible statuses.
+const (
+	Pass  Status = "pass"  // every condition held
+	Fail  Status = "fail"  // at least one condition did not hold
+	Error Status = "error" // the check could not be carried out
+)
+
+// Result is the outcome of one run of one rule.
+type Result struct {
+	Config        string   `json:"config"`
+	Rule          string   `json:"rule"`
+	Module        string   `json:"module"`
+	ModuleVersion string   `json:"module_version"`
+	Tags          []string `json:"tags"`
+	// Status is the outcome of this run.
+	Status Status `json:"status"`
+	// State is the confirmed state after this run (pass or fail).
+	State string `json:"state"`
+	// Transition is "fail" or "recovered" when this run changed the
+	// confirmed state, otherwise null.
+	Transition *string `json:"transition"`
+	// Consecutive is how many runs in a row ended like this one.
+	Consecutive int             `json:"consecutive"`
+	FailAfter   int             `json:"fail_after"`
+	PassAfter   int             `json:"pass_after"`
+	StartedAt   time.Time       `json:"started_at"`
+	DurationMS  int64           `json:"duration_ms"`
+	Failures    []match.Failure `json:"failures"`
+	Error       *string         `json:"error"`
+}
+
+// MarshalJSON writes empty lists as [] rather than null.
+func (r Result) MarshalJSON() ([]byte, error) {
+	type plain Result
+	p := plain(r)
+	if p.Tags == nil {
+		p.Tags = []string{}
+	}
+	if p.Failures == nil {
+		p.Failures = []match.Failure{}
+	}
+	return json.Marshal(p)
+}
+
+// OK reports whether the run passed.
+func (r Result) OK() bool { return r.Status == Pass }
+
+// Event is written to the event queue when a rule's confirmed state changes.
+type Event struct {
+	ID         string    `json:"id"`
+	Config     string    `json:"config"`
+	Rule       string    `json:"rule"`
+	Transition string    `json:"transition"`
+	From       string    `json:"from"`
+	To         string    `json:"to"`
+	At         time.Time `json:"at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Result     Result    `json:"result"`
+}
