@@ -45,7 +45,7 @@ modules:
 
 rules:
   - name: api-health          # REQUIRED, unique. [a-z0-9][a-z0-9_.-]*
-    module: http              # REQUIRED. module name
+    module: http              # REQUIRED. module name: [a-z0-9][a-z0-9_-]*
     enabled: true             # false: the rule is skipped
     tags: [api, web]          # for "onecheck run --tag"
     timeout: 10s              # the module is killed after this
@@ -75,6 +75,8 @@ name.
 
 Two different config files must not use the same name: onecheck remembers
 which file owns a name and refuses to run the second one (exit code `2`).
+If you move or rename a config file and keep its name, delete
+`<paths.state>/<name>/.owner` once; the next run records the new location.
 
 ## Default paths
 
@@ -88,6 +90,12 @@ which file owns a name and refuses to run the second one (exit code `2`).
 
 Relative paths in the config are resolved against the directory of the config
 file.
+
+onecheck creates these directories with mode `0750` and the files in them
+(results, state, events, logs) with mode `0640`. Results and events can
+contain pieces of what was checked, such as file content or command output,
+so they are not readable by everyone. To let another service read results or
+events, put its user into the group owning the directories.
 
 ## Includes (`conf.d/`)
 

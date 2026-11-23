@@ -203,3 +203,30 @@ func alive(pid int) bool {
 	fields := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+1:]))
 	return len(fields) == 0 || fields[0] != "Z"
 }
+
+func TestDescribeHangDoesNotBlock(t *testing.T) {
+	old := describeTimeout
+	describeTimeout = 300 * time.Millisecond
+	defer func() { describeTimeout = old }()
+	t.Setenv("FAKEMOD_MODE", "describe-hang")
+	start := time.Now()
+	_, err := Describe(context.Background(), Path(modDir, "fake"))
+	if err == nil {
+		t.Fatal("a hanging describe must be an error")
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("Describe blocked for %v although its child holds stdout open", elapsed)
+	}
+}
+
+func TestCheckInterruptedIsNotATimeout(t *testing.T) {
+	info := fake(t)
+	t.Setenv("FAKEMOD_MODE", "hang")
+	t.Setenv("FAKEMOD_PIDFILE", filepath.Join(t.TempDir(), "pid"))
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	_, err := Check(ctx, info, module.Request{Rule: "r"}, 30*time.Second, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "interrupted") || strings.Contains(err.Error(), "timed out") {
+		t.Errorf("err = %v, want an interruption, not a timeout", err)
+	}
+}

@@ -76,6 +76,10 @@ date; the new release speaks a protocol this onecheck does not support
 (update onecheck first); the module was copied in by hand, so its source is
 unknown.
 
+A skip is not a failure. An update that was attempted and failed (download
+error, checksum mismatch, a module that does not run) stops the command with
+exit code `2`; the installed version stays in place.
+
 ## Remove
 
 ```sh

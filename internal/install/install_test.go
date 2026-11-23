@@ -348,3 +348,20 @@ func TestSelfUpdateBrokenBinary(t *testing.T) {
 		t.Error("the current binary must stay untouched")
 	}
 }
+
+func TestUpdateChecksumMismatchIsAnError(t *testing.T) {
+	c := standard()
+	m := manager(t, c)
+	if _, err := m.Install(context.Background(), "o/r", []string{"file"}); err != nil {
+		t.Fatal(err)
+	}
+	c.addRelease("o/r", "v1.2.0", false, map[string]string{"onecheck-file_linux_amd64": script("file", "1.2.0", 1)}, false)
+	_, _, err := m.Update(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Errorf("a checksum mismatch during update must fail the command, got %v", err)
+	}
+	inst, _ := m.Installed()
+	if inst["file"].Version != "1.1.0" {
+		t.Errorf("the installed module must stay: %+v", inst)
+	}
+}

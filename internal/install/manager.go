@@ -180,7 +180,10 @@ func (m *Manager) Update(ctx context.Context, names []string) (updated []Found, 
 			}
 			cache[origin.Repo] = releases
 		}
-		f, reason := m.updateOne(ctx, releases, name, origin)
+		f, reason, err := m.updateOne(ctx, releases, name, origin)
+		if err != nil {
+			return updated, skipped, fmt.Errorf("module %s: %w", name, err)
+		}
 		if reason != "" {
 			skipped = append(skipped, name+": "+reason)
 			continue
@@ -190,23 +193,30 @@ func (m *Manager) Update(ctx context.Context, names []string) (updated []Found, 
 	return updated, skipped, nil
 }
 
-func (m *Manager) updateOne(ctx context.Context, releases []github.Release, name string, origin Installed) (Found, string) {
+// updateOne updates one module. A reason means there was nothing to do or
+// the new release cannot be used with this onecheck; an error means the
+// update was attempted and failed (download, checksum, broken module).
+func (m *Manager) updateOne(ctx context.Context, releases []github.Release, name string, origin Installed) (Found, string, error) {
 	r, err := pick(releases, origin.Repo, "")
 	if err != nil {
-		return Found{}, err.Error()
+		return Found{}, err.Error(), nil
 	}
 	if trimV(r.Tag) == origin.Version {
-		return Found{}, "up to date (" + origin.Version + ")"
+		return Found{}, "up to date (" + origin.Version + ")", nil
 	}
 	asset, ok := findAsset(r, m.assetName(name))
 	if !ok {
-		return Found{}, fmt.Sprintf("release %s of %s no longer has this module", r.Tag, origin.Repo)
+		return Found{}, fmt.Sprintf("release %s of %s no longer has this module", r.Tag, origin.Repo), nil
 	}
 	f := Found{Repo: origin.Repo, Tag: r.Tag, Name: name, Asset: asset}
-	if err := m.installOne(ctx, r, f); err != nil {
-		return Found{}, fmt.Sprintf("release %s not installed: %v", r.Tag, err)
+	err = m.installOne(ctx, r, f)
+	if errors.Is(err, modules.ErrIncompatible) {
+		return Found{}, fmt.Sprintf("release %s not installed: %v", r.Tag, err), nil
 	}
-	return f, ""
+	if err != nil {
+		return Found{}, "", fmt.Errorf("release %s: %w", r.Tag, err)
+	}
+	return f, "", nil
 }
 
 // Remove deletes installed modules.

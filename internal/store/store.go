@@ -28,6 +28,13 @@ const (
 	ownerFile = ".owner"
 )
 
+// Results, events and state can contain pieces of what was checked (file
+// content, command output), so they are readable by owner and group only.
+const (
+	dirPerm  = 0o750
+	filePerm = 0o640
+)
+
 var unsafeChars = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
 // Store gives access to the files of one config.
@@ -42,7 +49,7 @@ type Store struct {
 func Open(cfg *config.Config) (*Store, error) {
 	s := &Store{cfg: cfg, results: cfg.ResultsDir(), state: cfg.StateDir(), events: cfg.EventsDir()}
 	for _, dir := range []string{s.results, s.state, s.events} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, dirPerm); err != nil {
 			return nil, fmt.Errorf("cannot create directory: %w", err)
 		}
 	}
@@ -52,7 +59,7 @@ func Open(cfg *config.Config) (*Store, error) {
 // Lock takes the per-config run lock and checks that the state directory
 // belongs to this config file. It returns ErrLocked when a run is in progress.
 func (s *Store) Lock() (unlock func(), err error) {
-	f, err := os.OpenFile(filepath.Join(s.state, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(filepath.Join(s.state, lockFile), os.O_CREATE|os.O_RDWR, filePerm)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +96,7 @@ func (s *Store) claim() error {
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return WriteFileAtomic(path, []byte(s.cfg.Path+"\n"), 0o644)
+	return WriteFileAtomic(path, []byte(s.cfg.Path+"\n"), filePerm)
 }
 
 // fileName maps a rule name to a file name that cannot leave the directory.
@@ -167,5 +174,5 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(path, append(data, '\n'), 0o644)
+	return WriteFileAtomic(path, append(data, '\n'), filePerm)
 }

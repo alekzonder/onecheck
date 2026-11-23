@@ -9,8 +9,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/alekzonder/onecheck/internal/config"
 	"github.com/alekzonder/onecheck/internal/result"
@@ -431,6 +434,99 @@ func TestValidateReportsAll(t *testing.T) {
 	for i, want := range []string{"rule bad-op", "rule no-module", "rule disabled-bad"} {
 		if !strings.Contains(errs[i].Error(), want) || !strings.Contains(errs[i].Error(), "config.yaml") {
 			t.Errorf("error %d = %v, want it to mention %q and the source file", i, errs[i], want)
+		}
+	}
+}
+
+func TestRunInterruptedRecordsNothing(t *testing.T) {
+	e := newEnv(t)
+	e.touch("a.txt", "hello")
+	pidFile := filepath.Join(e.dir, "pid")
+	cfg := e.load(`
+  - name: slow
+    module: command
+    params: {run: "sleep 60 & echo $! > ` + pidFile + `; wait"}
+    check: {exit_code: 0}
+  - name: healthy
+    module: file
+    params: {path: DATA/a.txt}
+    check: {exists: true}
+`)
+	cfg.Run.Parallel = 1
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for i := 0; i < 200; i++ {
+			if _, err := os.Stat(pidFile); err == nil {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := Run(ctx, cfg, Options{}, quiet)
+	if err == nil || !strings.Contains(err.Error(), "interrupted") {
+		t.Fatalf("an interrupted run must be an error, got %v", err)
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Errorf("Run blocked for %v after cancellation", time.Since(start))
+	}
+	if len(e.events()) != 0 || e.exists("state/main/slow.json") || e.exists("state/main/healthy.json") || e.exists("results/main/slow.json") {
+		t.Error("an interrupted run must not record state, results or events")
+	}
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !processAlive(pid) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("process %d started by the command survived the interruption", pid)
+}
+
+func processAlive(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return true
+	}
+	fields := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+1:]))
+	return len(fields) == 0 || fields[0] != "Z"
+}
+
+func TestRunFilesAreNotWorldReadable(t *testing.T) {
+	e := newEnv(t)
+	e.run(twoRules, Options{})
+	for _, pattern := range []string{"results/main/*.json", "state/main/*.json", "events/*.json"} {
+		files, _ := filepath.Glob(filepath.Join(e.dir, pattern))
+		if len(files) == 0 {
+			t.Fatalf("no files for %s", pattern)
+		}
+		for _, f := range files {
+			info, err := os.Stat(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Mode().Perm()&0o007 != 0 {
+				t.Errorf("%s has mode %04o: results may contain checked content and must not be world-readable", f, info.Mode().Perm())
+			}
+		}
+	}
+	for _, dir := range []string{"results/main", "state/main", "events"} {
+		info, err := os.Stat(filepath.Join(e.dir, dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o007 != 0 {
+			t.Errorf("directory %s has mode %04o, want no access for others", dir, info.Mode().Perm())
 		}
 	}
 }

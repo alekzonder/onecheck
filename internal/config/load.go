@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -183,9 +184,11 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 		PassAfter: c.Defaults.PassAfter,
 	}
 	var raw rawRule
-	text, err := yaml.Marshal(node)
+	// Decoding the node (not its text) keeps anchors defined in other rules
+	// usable; unknown keys are then checked by hand.
+	err := node.Decode(&raw)
 	if err == nil {
-		err = decodeStrict(text, &raw)
+		err = unknownRuleKeys(node)
 	}
 	if err != nil {
 		rule.Err = fmt.Errorf("invalid rule: %s", strings.TrimPrefix(err.Error(), "yaml: "))
@@ -214,12 +217,40 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	return rule
 }
 
+var ruleKeys = map[string]bool{
+	"name": true, "module": true, "tags": true, "enabled": true, "timeout": true,
+	"fail_after": true, "pass_after": true, "params": true, "check": true,
+	"<<": true, // YAML merge key
+}
+
+// unknownRuleKeys rejects keys a rule does not have, so typos are reported.
+func unknownRuleKeys(node *yaml.Node) error {
+	if node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = node.Alias
+	}
+	if node.Kind != yaml.MappingNode {
+		return errors.New("a rule must be a mapping")
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if key := node.Content[i].Value; !ruleKeys[key] {
+			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, params, check)",
+				node.Content[i].Line, key)
+		}
+	}
+	return nil
+}
+
+// moduleNameRE keeps a module name from pointing outside the modules directory.
+var moduleNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
 func (r *Rule) validate() error {
 	switch {
 	case !NameRE.MatchString(r.Name):
 		return fmt.Errorf("invalid rule name %q: use lower-case letters, digits, '_', '.', '-' and start with a letter or digit", r.Name)
 	case r.Module == "":
 		return errors.New(`"module" is required`)
+	case !moduleNameRE.MatchString(r.Module):
+		return fmt.Errorf("invalid module name %q: use lower-case letters, digits, '_', '-'", r.Module)
 	case r.FailAfter < 1 || r.PassAfter < 1:
 		return errors.New("fail_after and pass_after must be at least 1")
 	case r.Timeout <= 0:

@@ -15,13 +15,18 @@ A run reports its outcome in four places:
 |---|---|
 | `0` | every rule that ran passed (also when there were no rules to run) |
 | `1` | at least one rule has status `fail` or `error` |
-| `2` | onecheck could not do its job: no or invalid config, unknown flag, another run of the same config in progress, results or events could not be written |
+| `2` | onecheck could not do its job: no or invalid config, unknown flag, another run of the same config in progress, results or events could not be written, the run was interrupted (SIGINT, SIGTERM) |
 
 The exit code follows the status of **this run**, not the confirmed state: a
 rule with `fail_after: 3` that failed once already gives `1`.
 
 With code `2` nothing is printed on stdout; the reason is on stderr, prefixed
 with `onecheck:`.
+
+An interrupted run (Ctrl-C, `systemctl stop`, shutdown) kills the running
+modules together with everything they started and records nothing: no
+results, no state changes, no events. A half-finished check says nothing
+about what it was checking, so it must not produce a `fail` event.
 
 ## Flags
 

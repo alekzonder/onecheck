@@ -3,10 +3,9 @@ package modules
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -24,7 +23,11 @@ const (
 // Prefix is the file name prefix of every module executable.
 const Prefix = "onecheck-"
 
-const describeTimeout = 5 * time.Second
+var describeTimeout = 5 * time.Second
+
+// ErrIncompatible means a module speaks a protocol version outside the
+// supported range.
+var ErrIncompatible = errors.New("incompatible protocol")
 
 // Info is a module found on disk together with its self-description.
 type Info struct {
@@ -42,31 +45,13 @@ func (i *Info) CompatError() error {
 	if i.Compatible() {
 		return nil
 	}
-	return fmt.Errorf("module %q speaks protocol %d, this onecheck supports %d..%d; update the module or onecheck",
-		i.Name, i.Protocol, MinProtocol, MaxProtocol)
+	return fmt.Errorf("%w: module %q speaks protocol %d, this onecheck supports %d..%d; update the module or onecheck",
+		ErrIncompatible, i.Name, i.Protocol, MinProtocol, MaxProtocol)
 }
 
 // Path returns where the module with the given name lives in dir.
 func Path(dir, name string) string {
 	return filepath.Join(dir, Prefix+name)
-}
-
-// Describe runs "<path> describe" and returns the module's description.
-func Describe(ctx context.Context, path string) (*Info, error) {
-	ctx, cancel := context.WithTimeout(ctx, describeTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "describe").Output()
-	if err != nil {
-		return nil, fmt.Errorf("%s describe: %w", path, err)
-	}
-	info := &Info{Path: path}
-	if err := json.Unmarshal(out, &info.Description); err != nil {
-		return nil, fmt.Errorf("%s describe: invalid JSON: %w", path, err)
-	}
-	if info.Name == "" || info.Protocol == 0 {
-		return nil, fmt.Errorf("%s describe: name and protocol are required", path)
-	}
-	return info, nil
 }
 
 // List describes every module executable in dir. A missing directory is an

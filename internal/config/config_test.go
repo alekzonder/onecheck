@@ -206,12 +206,13 @@ rules:
   - {name: nomodule}
   - {name: Bad_Name, module: file}
   - {name: zero, module: file, fail_after: 0}
+  - {name: escape, module: "x/../../other/tool"}
 `
 	cfg, err := Load(write(t, t.TempDir(), "c.yaml", content))
 	if err != nil {
 		t.Fatalf("rule-level problems must not fail the load: %v", err)
 	}
-	if len(cfg.Rules) != 5 || cfg.Rules[0].Err != nil {
+	if len(cfg.Rules) != 6 || cfg.Rules[0].Err != nil {
 		t.Fatalf("rules = %+v", cfg.Rules)
 	}
 	for _, r := range cfg.Rules[1:] {
@@ -309,5 +310,40 @@ func TestFindNotFound(t *testing.T) {
 	}
 	if _, err := Find("/nonexistent/x.yaml"); err == nil {
 		t.Error("explicit missing path must be an error")
+	}
+}
+
+func TestYAMLAnchorsAcrossRules(t *testing.T) {
+	content := `
+name: main
+rules:
+  - name: a
+    module: http
+    params: &common {url: "https://example.com", headers: {X-A: b}}
+    check: &ok {status: 200}
+  - name: b
+    module: http
+    params: *common
+    check: *ok
+  - name: c
+    module: http
+    params:
+      <<: *common
+      method: POST
+`
+	cfg, err := Load(write(t, t.TempDir(), "c.yaml", content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range cfg.Rules {
+		if r.Err != nil {
+			t.Errorf("rule %s: %v", r.Name, r.Err)
+		}
+	}
+	if cfg.Rules[1].Params["url"] != "https://example.com" || cfg.Rules[1].Check["status"] != 200 {
+		t.Errorf("rule b = %+v", cfg.Rules[1])
+	}
+	if cfg.Rules[2].Params["url"] != "https://example.com" || cfg.Rules[2].Params["method"] != "POST" {
+		t.Errorf("rule c = %+v", cfg.Rules[2])
 	}
 }

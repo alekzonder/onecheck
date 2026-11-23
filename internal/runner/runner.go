@@ -54,6 +54,11 @@ func Run(ctx context.Context, cfg *config.Config, opts Options, log *slog.Logger
 	}
 
 	results := execute(ctx, cfg, jobs, log)
+	if ctx.Err() != nil {
+		// Checks killed half-way say nothing about what they were checking.
+		// Record nothing: no state change, no event, no result.
+		return nil, errors.New("run interrupted, nothing was recorded")
+	}
 	now := time.Now().UTC()
 	for i := range results {
 		if err := record(st, cfg, &results[i], now, log); err != nil {
@@ -116,8 +121,12 @@ func execute(ctx context.Context, cfg *config.Config, jobs []prepared, log *slog
 	sem := make(chan struct{}, cfg.Run.Parallel)
 	var wg sync.WaitGroup
 	for i := range jobs {
-		wg.Add(1)
 		sem <- struct{}{}
+		if ctx.Err() != nil {
+			<-sem
+			break
+		}
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()

@@ -21,6 +21,14 @@ func main() {
 			return
 		case "describe-fail":
 			os.Exit(3)
+		case "describe-hang":
+			// The child inherits stdout and keeps the pipe open.
+			child := exec.Command("sleep", "20")
+			child.Stdout = os.Stdout
+			if err := child.Start(); err != nil {
+				panic(err)
+			}
+			time.Sleep(20 * time.Second)
 		}
 	}
 	if len(os.Args) > 1 && os.Args[1] == "check" {

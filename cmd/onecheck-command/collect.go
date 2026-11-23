@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/alekzonder/onecheck/pkg/module"
@@ -61,9 +60,9 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	cmd.Stdin = strings.NewReader(p.Stdin)
 	stdout, stderr := &capture{limit: req.MaxFieldSize}, &capture{limit: req.MaxFieldSize}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	// Own process group, so that a timeout also kills what the command started.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	// The command stays in the module's process group on purpose: onecheck
+	// kills that whole group on timeout or interruption, which takes the
+	// command and everything it started with it.
 	cmd.WaitDelay = time.Second
 
 	start := time.Now()

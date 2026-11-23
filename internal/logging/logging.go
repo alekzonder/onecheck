@@ -55,10 +55,10 @@ func Setup(file, level, format string, stderr io.Writer) (*slog.Logger, io.Close
 }
 
 func openLog(file string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	return os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 }
 
 // fanout sends each record to every handler that accepts its level.

@@ -131,8 +131,10 @@ means the module itself is broken; the rule gets status `error`.
 **stdout is for the response only.** Write diagnostics to stderr. onecheck
 puts a module's stderr into its log at level `debug`.
 
-**Timeouts.** onecheck kills the module, and every process it started, a
-short moment after `timeout_ms`. Prefer to stop on your own before that and
+**Timeouts.** onecheck starts a module in its own process group and kills
+the whole group a short moment after `timeout_ms`, and also when onecheck
+itself is interrupted. Leave child processes in that group (do not call
+`setsid`/`setpgid` for them), so they are cleaned up with the module. Prefer to stop on your own before that and
 return an `error` saying what timed out.
 
 **Size limits.** Never read an unbounded amount into memory. Read at most
