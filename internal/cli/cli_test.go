@@ -240,3 +240,19 @@ func TestModuleListCommand(t *testing.T) {
 		t.Errorf("empty dir without a config: code=%d out=%q", code, out)
 	}
 }
+
+func TestLogLevelFlagAlsoLogsToStderr(t *testing.T) {
+	_, cfg := setup(t, "", passRule)
+	if _, _, errOut := execute("-c", cfg); strings.Contains(errOut, "check passed") {
+		t.Errorf("without --log-level stderr must stay quiet:\n%s", errOut)
+	}
+	_, out, errOut := execute("-c", cfg, "--log-level", "debug")
+	for _, want := range []string{"run started", "collecting fields", "fields collected", "check passed"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("--log-level debug: stderr lacks %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(out, "level=") {
+		t.Errorf("log lines leaked into stdout:\n%s", out)
+	}
+}

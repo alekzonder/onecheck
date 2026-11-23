@@ -1,5 +1,6 @@
 // Package logging sets up onecheck's logger: everything at the configured
-// level goes to the log file, warnings and errors are repeated on stderr.
+// level goes to the log file, warnings and errors are repeated on stderr
+// (everything at the level, when it was asked for on the command line).
 package logging
 
 import (
@@ -31,17 +32,24 @@ type nopCloser struct{}
 func (nopCloser) Close() error { return nil }
 
 // Setup returns a logger writing to file (format "text" or "json") at the
-// given level and to stderr at warn and above. When the file cannot be
+// given level and to stderr at stderrLevel, or at warn and above when
+// stderrLevel is empty. When the file cannot be
 // opened it still returns a working logger, which then sends everything at
 // the level to stderr, together with an error describing the problem.
-func Setup(file, level, format string, stderr io.Writer) (*slog.Logger, io.Closer, error) {
+func Setup(file, level, format string, stderr io.Writer, stderrLevel string) (*slog.Logger, io.Closer, error) {
 	lvl, err := ParseLevel(level)
 	if err != nil {
 		return nil, nil, err
 	}
+	errLvl := slog.LevelWarn
+	if stderrLevel != "" {
+		if errLvl, err = ParseLevel(stderrLevel); err != nil {
+			return nil, nil, err
+		}
+	}
 	f, err := openLog(file)
 	if err != nil {
-		h := slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: lvl})
+		h := slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: min(lvl, errLvl)})
 		return slog.New(h), nopCloser{}, fmt.Errorf("cannot open log file, logging to stderr only: %w", err)
 	}
 	var fileHandler slog.Handler
@@ -50,7 +58,7 @@ func Setup(file, level, format string, stderr io.Writer) (*slog.Logger, io.Close
 	} else {
 		fileHandler = slog.NewTextHandler(f, &slog.HandlerOptions{Level: lvl})
 	}
-	stderrHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn})
+	stderrHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: errLvl})
 	return slog.New(fanout{fileHandler, stderrHandler}), f, nil
 }
 

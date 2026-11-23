@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,18 @@ func Run(ctx context.Context, cfg *config.Config, opts Options, log *slog.Logger
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("rules selected", "count", len(rules), "of", len(cfg.Rules), "modules_dir", cfg.Paths.Modules,
+		"results_dir", cfg.ResultsDir(), "state_dir", cfg.StateDir(), "events_dir", cfg.EventsDir())
 	mods := newModuleSet(cfg.Paths.Modules)
+	for _, rule := range rules {
+		if _, seen := mods.cache[rule.Module]; seen || rule.Err != nil {
+			continue
+		}
+		if m := mods.get(ctx, rule.Module); m.err == nil {
+			log.Debug("module loaded", "module", m.info.Name, "version", m.info.Version,
+				"protocol", m.info.Protocol, "path", m.info.Path)
+		}
+	}
 	jobs := make([]prepared, len(rules))
 	for i, rule := range rules {
 		jobs[i] = prepare(ctx, rule, mods)
@@ -168,6 +180,8 @@ func runOne(ctx context.Context, cfg *config.Config, job prepared, log *slog.Log
 		Fields:       job.check.Fields(),
 		MaxFieldSize: int64(cfg.Run.MaxFieldSize),
 	}
+	log.Debug("collecting fields", "rule", rule.Name, "module", rule.Module, "params", string(job.params),
+		"fields", req.Fields, "timeout", rule.Timeout.String())
 	var stderr bytes.Buffer
 	resp, err := modules.Check(ctx, job.mod.info, req, rule.Timeout, &stderr)
 	if stderr.Len() > 0 {
@@ -179,6 +193,8 @@ func runOne(ctx context.Context, cfg *config.Config, job prepared, log *slog.Log
 	if resp.Error != nil {
 		return fail(errors.New(resp.Error.Message))
 	}
+	log.Debug("fields collected", append([]any{"rule", rule.Name, "module", rule.Module,
+		"duration_ms", time.Since(res.StartedAt).Milliseconds()}, fieldAttrs(resp)...)...)
 	failures, err := job.check.Eval(resp.Fields, resp.Truncated)
 	if err != nil {
 		return fail(err)
@@ -233,8 +249,35 @@ func record(st *store.Store, cfg *config.Config, res *result.Result, now time.Ti
 	if err := st.WriteResult(*res); err != nil {
 		return fmt.Errorf("cannot write result: %w", err)
 	}
+	log.Debug("state updated", "rule", res.Rule, "from", from, "to", next.State,
+		"consecutive", res.Consecutive, "fail_after", res.FailAfter, "pass_after", res.PassAfter)
 	logResult(log, res)
 	return nil
+}
+
+// logValueLimit is how much of one field value a debug record shows.
+const logValueLimit = 256
+
+// fieldAttrs renders the fields a module returned for a debug record, in a
+// stable order, with long values cut.
+func fieldAttrs(resp *module.Response) []any {
+	names := make([]string, 0, len(resp.Fields))
+	for name := range resp.Fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	attrs := make([]any, 0, len(names)+1)
+	for _, name := range names {
+		value := resp.Fields[name]
+		if text, ok := value.(string); ok && len(text) > logValueLimit {
+			value = fmt.Sprintf("%s... (%d bytes)", strings.ToValidUTF8(text[:logValueLimit], ""), len(text))
+		}
+		attrs = append(attrs, slog.Any(name, value))
+	}
+	if len(resp.Truncated) > 0 {
+		attrs = append(attrs, slog.Any("truncated", resp.Truncated))
+	}
+	return []any{slog.Group("values", attrs...)}
 }
 
 func logResult(log *slog.Logger, res *result.Result) {

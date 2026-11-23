@@ -40,7 +40,7 @@ onecheck run [-c <config>] [-o text|json] [--only-failed] [--rule <name>]... [--
 | `--only-failed` | list only rules with status `fail` or `error`; the summary still counts all rules |
 | `--rule <name>` | run only this rule; repeatable |
 | `--tag <tag>` | run only rules carrying this tag; repeatable |
-| `--log-level <level>` | override `log.level` for this run |
+| `--log-level <level>` | override `log.level` for this run and also print the log at that level on stderr |
 
 With both `--rule` and `--tag`, a rule runs if it matches either. Disabled
 rules (`enabled: false`) never run.

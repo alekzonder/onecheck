@@ -24,7 +24,7 @@ log:
 | `error` | a run that could not complete |
 | `warn` | recoverable problems, e.g. an unreadable state file |
 | `info` | one line per rule with its outcome, state changes, a summary per run |
-| `debug` | additionally what modules printed on their stderr |
+| `debug` | additionally, per rule: the params and fields requested from the module, the values it returned (long strings cut to 256 bytes), the state counters; the modules found; what modules printed on their stderr |
 
 The level is taken from `--log-level`, then `log.level`, then `info`:
 
@@ -43,7 +43,19 @@ time=2026-11-23T10:00:00.131Z level=INFO msg="run finished" total=12 passed=11 f
 `json` format writes the same records as one JSON object per line.
 
 Messages at `warn` and above are also printed on stderr, so cron mails them.
-Log lines never go to stdout, which carries only results.
+With `--log-level` on the command line, stderr shows everything at that level
+as well, so a run can be watched in the terminal:
+
+```sh
+onecheck --log-level debug --rule api-health
+```
+
+`log.level` in the config changes only the log file, never stderr. Log lines
+never go to stdout, which carries only results.
+
+At `debug` the log contains rule params and returned values as they are,
+including HTTP headers and command output. Do not leave `log.level: debug`
+on if those hold secrets.
 
 If the log file cannot be opened, onecheck prints a warning, logs to stderr
 for that run, and still runs the checks.

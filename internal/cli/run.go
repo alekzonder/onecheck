@@ -8,6 +8,7 @@ import (
 
 	"github.com/alekzonder/onecheck/internal/output"
 	"github.com/alekzonder/onecheck/internal/runner"
+	"github.com/alekzonder/onecheck/internal/version"
 )
 
 type runOptions struct {
@@ -75,7 +76,7 @@ func (a *app) run(ctx context.Context, o *runOptions) error {
 	}
 	defer closer.Close()
 
-	log.Debug("run started", "config", cfg.Path, "name", cfg.Name)
+	log.Debug("run started", "config", cfg.Path, "name", cfg.Name, "version", version.Version, "log_file", cfg.LogFile())
 	results, err := runner.Run(ctx, cfg, runner.Options{Rules: o.rules, Tags: o.tags}, log)
 	if err != nil {
 		log.Error("run failed", "error", err)

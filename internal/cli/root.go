@@ -101,7 +101,7 @@ func (a *app) rootCmd() *cobra.Command {
 		return fmt.Errorf("%w\nSee '%s --help'", err, cmd.CommandPath())
 	})
 	root.PersistentFlags().StringVarP(&a.configPath, "config", "c", "", "path to the config file (default: see above)")
-	root.PersistentFlags().StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn or error (overrides the config)")
+	root.PersistentFlags().StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn or error; overrides the config and also prints the log on stderr")
 	addRunFlags(root, run)
 
 	root.AddCommand(a.runCmd(), a.validateCmd(), a.moduleCmd(), a.selfUpdateCmd(), a.logrotateCmd(), a.versionCmd())

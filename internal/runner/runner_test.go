@@ -530,3 +530,35 @@ func TestRunFilesAreNotWorldReadable(t *testing.T) {
 		}
 	}
 }
+
+func TestDebugLogShowsWhatWasAskedAndCollected(t *testing.T) {
+	e := newEnv(t)
+	if err := os.WriteFile(filepath.Join(e.data, "f.txt"), []byte("hello "+strings.Repeat("x", 5000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cfg := e.load(`
+  - name: f
+    module: file
+    params: { path: DATA/f.txt }
+    check: { exists: true, content: { contains: hello } }
+`)
+	if _, err := Run(context.Background(), cfg, Options{}, log); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`msg="module loaded"`, "onecheck-file",
+		`msg="collecting fields"`, "f.txt", "timeout=30s",
+		`msg="fields collected"`, "exists=true", "hello xxx",
+		`msg="state updated"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug log lacks %q:\n%s", want, out)
+		}
+	}
+	if len(out) > 4000 {
+		t.Errorf("a 5000-byte field was logged in full (%d bytes of log)", len(out))
+	}
+}

@@ -12,7 +12,7 @@ import (
 func TestSetupWritesFileAtLevel(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "sub", "dir", "onecheck.log")
 	var stderr bytes.Buffer
-	log, closer, err := Setup(file, "info", "text", &stderr)
+	log, closer, err := Setup(file, "info", "text", &stderr, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestSetupWritesFileAtLevel(t *testing.T) {
 
 func TestSetupJSONFormat(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "onecheck.log")
-	log, closer, err := Setup(file, "debug", "json", &bytes.Buffer{})
+	log, closer, err := Setup(file, "debug", "json", &bytes.Buffer{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestSetupUnwritableFileFallsBackToStderr(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	log, closer, err := Setup(filepath.Join(blocker, "onecheck.log"), "info", "text", &stderr)
+	log, closer, err := Setup(filepath.Join(blocker, "onecheck.log"), "info", "text", &stderr, "")
 	if err == nil {
 		t.Error("want an error describing the log file problem")
 	}
@@ -74,7 +74,34 @@ func TestSetupUnwritableFileFallsBackToStderr(t *testing.T) {
 }
 
 func TestSetupBadLevel(t *testing.T) {
-	if _, _, err := Setup(filepath.Join(t.TempDir(), "x.log"), "loud", "text", &bytes.Buffer{}); err == nil {
+	if _, _, err := Setup(filepath.Join(t.TempDir(), "x.log"), "loud", "text", &bytes.Buffer{}, ""); err == nil {
 		t.Error("unknown level must be an error")
+	}
+}
+
+func TestStderrLevelCanBeLowered(t *testing.T) {
+	var stderr bytes.Buffer
+	log, closer, err := Setup(filepath.Join(t.TempDir(), "onecheck.log"), "debug", "text", &stderr, "debug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closer.Close()
+	log.Debug("fine detail")
+	if !strings.Contains(stderr.String(), "fine detail") {
+		t.Errorf("debug record did not reach stderr: %q", stderr.String())
+	}
+}
+
+func TestStderrStaysAtWarnByDefault(t *testing.T) {
+	var stderr bytes.Buffer
+	log, closer, err := Setup(filepath.Join(t.TempDir(), "onecheck.log"), "debug", "text", &stderr, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closer.Close()
+	log.Debug("fine detail")
+	log.Info("routine")
+	if stderr.Len() != 0 {
+		t.Errorf("stderr got records below warn: %q", stderr.String())
 	}
 }
