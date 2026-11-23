@@ -9,6 +9,15 @@ linters:
     - bodyclose
     - errorlint
   settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - (*os.File).Close
+        - os.Remove
+        - os.RemoveAll
     gocyclo:
       # Do not raise this threshold; split the function instead.
       min-complexity: 25
