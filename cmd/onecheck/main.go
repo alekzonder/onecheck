@@ -2,11 +2,11 @@
 package main
 
 import (
-	"fmt"
+	"os"
 
-	"github.com/alekzonder/onecheck/internal/version"
+	"github.com/alekzonder/onecheck/internal/cli"
 )
 
 func main() {
-	fmt.Println("onecheck", version.Version)
+	os.Exit(cli.Execute(os.Args[1:], os.Stdout, os.Stderr))
 }
