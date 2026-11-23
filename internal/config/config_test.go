@@ -1,0 +1,313 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func write(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	path := write(t, t.TempDir(), "config.yaml", "name: main\nrules:\n  - name: a\n    module: file\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "main" || cfg.Path != path {
+		t.Errorf("name=%q path=%q", cfg.Name, cfg.Path)
+	}
+	if cfg.Log.Level != "info" || cfg.Log.Format != "text" {
+		t.Errorf("log = %+v", cfg.Log)
+	}
+	r := cfg.Log.Rotate
+	if r.MaxSize != 10<<20 || r.Keep != 5 || time.Duration(r.MaxAge) != 30*24*time.Hour || !r.Compress {
+		t.Errorf("rotate = %+v", r)
+	}
+	if time.Duration(cfg.Events.TTL) != 24*time.Hour || cfg.Run.Parallel != 4 || cfg.Run.MaxFieldSize != 10<<20 {
+		t.Errorf("events=%+v run=%+v", cfg.Events, cfg.Run)
+	}
+	if len(cfg.Modules.Repos) != 1 || cfg.Modules.Repos[0] != "alekzonder/onecheck" {
+		t.Errorf("repos = %v", cfg.Modules.Repos)
+	}
+	rule := cfg.Rules[0]
+	if !rule.Enabled || rule.Timeout != 30*time.Second || rule.FailAfter != 1 || rule.PassAfter != 1 || rule.Err != nil {
+		t.Errorf("rule = %+v", rule)
+	}
+}
+
+func TestLoadDefaultPaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if os.Geteuid() == 0 {
+		t.Skip("default paths differ for root")
+	}
+	cfg, err := Load(write(t, t.TempDir(), "config.yaml", "name: main\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(home, ".local/state/onecheck")
+	if cfg.Paths.Results != state+"/results" || cfg.Paths.Events != state+"/events" || cfg.Paths.State != state+"/state" {
+		t.Errorf("paths = %+v", cfg.Paths)
+	}
+	if cfg.Paths.Modules != filepath.Join(home, ".local/lib/onecheck/modules") || cfg.Log.Dir != state+"/log" {
+		t.Errorf("modules=%q log=%q", cfg.Paths.Modules, cfg.Log.Dir)
+	}
+	if cfg.ResultsDir() != state+"/results/main" || cfg.StateDir() != state+"/state/main" || cfg.LogFile() != state+"/log/main/onecheck.log" {
+		t.Errorf("derived dirs: %q %q %q", cfg.ResultsDir(), cfg.StateDir(), cfg.LogFile())
+	}
+}
+
+const fullConfig = `
+name: web.prod-1
+log:
+  level: debug
+  dir: /tmp/oc/log
+  format: json
+  rotate: {max_size: 1MB, keep: 2, max_age: 7d, compress: false}
+paths:
+  modules: /tmp/oc/modules
+  results: rel/results
+  events: /tmp/oc/events
+  state: /tmp/oc/state
+events: {ttl: 2h}
+run: {parallel: 8, max_field_size: 1KB}
+defaults: {timeout: 5s, fail_after: 3, pass_after: 2}
+modules: {repos: [a/b, c/d]}
+rules:
+  - name: api
+    module: http
+    tags: [api, prod]
+    timeout: 1500ms
+    fail_after: 1
+    params: {url: "https://example.com", headers: {X-A: b}}
+    check: {status: 200}
+  - name: off
+    module: file
+    enabled: false
+`
+
+func TestLoadFull(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Load(write(t, dir, "c.yaml", fullConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "web.prod-1" || cfg.Log.Level != "debug" || cfg.Log.Format != "json" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	if cfg.Log.Rotate.MaxSize != 1<<20 || cfg.Log.Rotate.Keep != 2 || cfg.Log.Rotate.Compress {
+		t.Errorf("rotate = %+v", cfg.Log.Rotate)
+	}
+	if cfg.Paths.Results != filepath.Join(dir, "rel/results") {
+		t.Errorf("relative path must resolve against the config dir, got %q", cfg.Paths.Results)
+	}
+	if cfg.Run.Parallel != 8 || cfg.Run.MaxFieldSize != 1024 || time.Duration(cfg.Events.TTL) != 2*time.Hour {
+		t.Errorf("run=%+v events=%+v", cfg.Run, cfg.Events)
+	}
+	api, off := cfg.Rules[0], cfg.Rules[1]
+	if api.Timeout != 1500*time.Millisecond || api.FailAfter != 1 || api.PassAfter != 2 || len(api.Tags) != 2 {
+		t.Errorf("api = %+v", api)
+	}
+	if api.Params["url"] != "https://example.com" || api.Check["status"] != 200 {
+		t.Errorf("api params/check = %v %v", api.Params, api.Check)
+	}
+	if off.Enabled || off.Timeout != 5*time.Second || off.FailAfter != 3 {
+		t.Errorf("off = %+v", off)
+	}
+	if api.Source != cfg.Path {
+		t.Errorf("source = %q", api.Source)
+	}
+}
+
+func TestInclude(t *testing.T) {
+	dir := t.TempDir()
+	main := write(t, dir, "config.yaml", "name: main\ninclude: [conf.d/*.yaml, missing/*.yaml]\nrules:\n  - {name: first, module: file}\n")
+	write(t, dir, "conf.d/20-b.yaml", "rules:\n  - {name: b, module: file}\n")
+	write(t, dir, "conf.d/10-a.yaml", "rules:\n  - {name: a1, module: file}\n  - {name: a2, module: http}\n")
+	write(t, dir, "conf.d/ignored.txt", "not yaml")
+	cfg, err := Load(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, r := range cfg.Rules {
+		names = append(names, r.Name)
+	}
+	if strings.Join(names, ",") != "first,a1,a2,b" {
+		t.Errorf("rules = %v", names)
+	}
+	if cfg.Rules[3].Source != filepath.Join(dir, "conf.d/20-b.yaml") {
+		t.Errorf("source = %q", cfg.Rules[3].Source)
+	}
+}
+
+func TestIncludeOnlyRulesKey(t *testing.T) {
+	dir := t.TempDir()
+	main := write(t, dir, "config.yaml", "name: main\ninclude: [conf.d/*.yaml]\n")
+	write(t, dir, "conf.d/a.yaml", "name: other\nrules: []\n")
+	if _, err := Load(main); err == nil || !strings.Contains(err.Error(), "a.yaml") {
+		t.Errorf("include with extra keys must fail naming the file, got %v", err)
+	}
+}
+
+func TestDuplicateRule(t *testing.T) {
+	dir := t.TempDir()
+	main := write(t, dir, "config.yaml", "name: main\ninclude: [conf.d/*.yaml]\nrules:\n  - {name: dup, module: file}\n")
+	write(t, dir, "conf.d/a.yaml", "rules:\n  - {name: dup, module: file}\n")
+	_, err := Load(main)
+	if err == nil || !strings.Contains(err.Error(), "config.yaml") || !strings.Contains(err.Error(), "a.yaml") {
+		t.Errorf("duplicate rule error must name both files, got %v", err)
+	}
+}
+
+func TestWholeConfigErrors(t *testing.T) {
+	cases := map[string]string{
+		"unknown key":      "name: main\nrulez: []\n",
+		"missing name":     "rules: []\n",
+		"bad name":         "name: Bad/Name\n",
+		"invalid yaml":     "name: [unclosed\n",
+		"bad size":         "name: main\nrun: {max_field_size: 10XB}\n",
+		"bad level":        "name: main\nlog: {level: loud}\n",
+		"bad format":       "name: main\nlog: {format: xml}\n",
+		"zero parallel":    "name: main\nrun: {parallel: 0}\n",
+		"bad defaults":     "name: main\ndefaults: {fail_after: 0}\n",
+		"rule has no name": "name: main\nrules:\n  - {module: file}\n",
+	}
+	for name, content := range cases {
+		if _, err := Load(write(t, t.TempDir(), "c.yaml", content)); err == nil {
+			t.Errorf("%s: must be a config error", name)
+		}
+	}
+	if _, err := Load(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
+		t.Error("missing file must be an error")
+	}
+}
+
+func TestRuleLevelErrors(t *testing.T) {
+	content := `
+name: main
+rules:
+  - {name: ok, module: file}
+  - {name: typo, module: file, parms: {path: /x}}
+  - {name: nomodule}
+  - {name: Bad_Name, module: file}
+  - {name: zero, module: file, fail_after: 0}
+`
+	cfg, err := Load(write(t, t.TempDir(), "c.yaml", content))
+	if err != nil {
+		t.Fatalf("rule-level problems must not fail the load: %v", err)
+	}
+	if len(cfg.Rules) != 5 || cfg.Rules[0].Err != nil {
+		t.Fatalf("rules = %+v", cfg.Rules)
+	}
+	for _, r := range cfg.Rules[1:] {
+		if r.Err == nil {
+			t.Errorf("rule %q must carry an error", r.Name)
+		}
+	}
+	if !strings.Contains(cfg.Rules[1].Err.Error(), "parms") {
+		t.Errorf("typo error = %v", cfg.Rules[1].Err)
+	}
+}
+
+func TestEnvExpansion(t *testing.T) {
+	t.Setenv("OC_TOKEN", "s3cret")
+	content := `
+name: main
+rules:
+  - name: a
+    module: http
+    params:
+      url: "https://example.com/${OC_TOKEN}/x"
+      headers: {Authorization: "Bearer ${OC_TOKEN}"}
+      list: ["${OC_TOKEN}", "cost $$5", "plain $HOME"]
+    check:
+      body: {contains: "${OC_TOKEN}"}
+`
+	cfg, err := Load(write(t, t.TempDir(), "c.yaml", content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Rules[0].Params
+	if p["url"] != "https://example.com/s3cret/x" {
+		t.Errorf("url = %v", p["url"])
+	}
+	if p["headers"].(map[string]any)["Authorization"] != "Bearer s3cret" {
+		t.Errorf("headers = %v", p["headers"])
+	}
+	list := p["list"].([]any)
+	if list[0] != "s3cret" || list[1] != "cost $5" || list[2] != "plain $HOME" {
+		t.Errorf("list = %v", list)
+	}
+	body := cfg.Rules[0].Check["body"].(map[string]any)
+	if body["contains"] != "${OC_TOKEN}" {
+		t.Errorf("check must not be expanded, got %v", body["contains"])
+	}
+}
+
+func TestEnvUndefinedIsRuleError(t *testing.T) {
+	content := "name: main\nrules:\n  - {name: a, module: http, params: {url: \"${OC_SURELY_UNDEFINED}\"}}\n  - {name: b, module: file}\n"
+	cfg, err := Load(write(t, t.TempDir(), "c.yaml", content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rules[0].Err == nil || !strings.Contains(cfg.Rules[0].Err.Error(), "OC_SURELY_UNDEFINED") {
+		t.Errorf("err = %v", cfg.Rules[0].Err)
+	}
+	if cfg.Rules[1].Err != nil {
+		t.Errorf("other rules must be unaffected: %v", cfg.Rules[1].Err)
+	}
+}
+
+func TestFindOrder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("ONECHECK_CONFIG", "")
+	homeCfg := write(t, home, ".config/onecheck/config.yaml", "name: home\n")
+	envCfg := write(t, t.TempDir(), "env.yaml", "name: env\n")
+	flagCfg := write(t, t.TempDir(), "flag.yaml", "name: flag\n")
+
+	if _, err := os.Stat(systemConfig); err == nil {
+		t.Skip("a system config exists on this machine")
+	}
+	got, err := Find("")
+	if err != nil || got != homeCfg {
+		t.Errorf("Find() = %q, %v; want home config", got, err)
+	}
+	t.Setenv("ONECHECK_CONFIG", envCfg)
+	if got, _ := Find(""); got != envCfg {
+		t.Errorf("Find() = %q; want env config", got)
+	}
+	if got, _ := Find(flagCfg); got != flagCfg {
+		t.Errorf("Find(flag) = %q; want flag config", got)
+	}
+}
+
+func TestFindNotFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ONECHECK_CONFIG", "")
+	if _, err := os.Stat(systemConfig); err == nil {
+		t.Skip("a system config exists on this machine")
+	}
+	_, err := Find("")
+	if err == nil || !strings.Contains(err.Error(), systemConfig) || !strings.Contains(err.Error(), ".config/onecheck/config.yaml") {
+		t.Errorf("error must list the paths tried, got %v", err)
+	}
+	if _, err := Find("/nonexistent/x.yaml"); err == nil {
+		t.Error("explicit missing path must be an error")
+	}
+}
