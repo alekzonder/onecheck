@@ -4,6 +4,60 @@
 
 onecheck is one static binary plus one executable per check module.
 
+### With the install script
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh | sh
+```
+
+The script detects the system and CPU, asks GitHub for the latest release,
+verifies the download against the release's `checksums.txt`, and installs
+onecheck together with the bundled modules (`file`, `http`, `command`) of the
+same version.
+
+A specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh | sh -s -- --version 0.1.0
+```
+
+Every version gets its own directory, and a symlink in a bin directory points
+at the chosen one:
+
+| | Linux | macOS |
+|---|---|---|
+| versions | `/usr/local/lib/onecheck/versions/<version>/onecheck` | `~/.local/share/onecheck/versions/<version>/onecheck` |
+| symlink | `/usr/local/bin/onecheck` | `~/.local/bin/onecheck` |
+| modules | `/usr/lib/onecheck/modules` | `~/.local/lib/onecheck/modules` |
+
+On Linux the install is system-wide, and the script calls `sudo` when it is
+not run as root. On macOS everything stays in the home directory; if
+`~/.local/bin` is not in `PATH`, the script says how to add it.
+
+| Option | Description |
+|---|---|
+| `--version <v>` | version to install (`0.1.0` or `v0.1.0`); default: the latest release. Also `ONECHECK_VERSION` |
+| `--root <dir>` | where versions are kept |
+| `--bin-dir <dir>` | where the `onecheck` symlink is created |
+| `--modules-dir <dir>` | where the bundled modules go |
+| `--no-modules` | install onecheck only |
+
+Set `GITHUB_TOKEN` if GitHub's rate limit gets in the way.
+
+To upgrade, downgrade or switch back, run the script again. A version that is
+already on disk is not downloaded again, only the symlink is switched, and the
+modules are brought to the same version. Old versions are kept until you
+delete their directories under `versions/`. `onecheck self-update` refuses to
+touch a binary installed this way, because it would overwrite one version's
+directory with another version.
+
+The modules directories above are the defaults of `paths.modules`: the Linux
+one for root, the macOS one for a regular user. If you run onecheck on Linux
+as a regular user, set `paths.modules: /usr/lib/onecheck/modules` in the
+config, or install with `--modules-dir ~/.local/lib/onecheck/modules`.
+
+### By hand
+
 1. Download `onecheck_<os>_<arch>` from the
    [releases](https://github.com/alekzonder/onecheck/releases), verify it
    against `checksums.txt`, and put it into `PATH` as `onecheck`:

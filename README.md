@@ -35,8 +35,8 @@ $ echo $?
 ## Quick start
 
 ```sh
-# 1. put the onecheck binary into PATH, then install the bundled modules
-onecheck module install alekzonder/onecheck --modules-dir /usr/lib/onecheck/modules
+# 1. install the latest onecheck and the bundled modules
+curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh | sh
 
 # 2. write a config
 mkdir -p /etc/onecheck && cat > /etc/onecheck/config.yaml <<'YAML'

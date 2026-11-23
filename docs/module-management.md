@@ -102,6 +102,10 @@ and then renamed over the current binary in one step. On any failure the
 current binary is left untouched. The user running the command needs write
 access to the directory of the binary.
 
+A onecheck installed with `install.sh` lives in a per-version directory and
+is not updated by `self-update` (the command refuses): run `install.sh`
+again, see [getting-started.md](getting-started.md#with-the-install-script).
+
 `self-update` does not touch modules, and `module update` does not touch
 onecheck. A typical sequence:
 

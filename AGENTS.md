@@ -37,6 +37,7 @@ Rules for anyone (human or AI agent) changing this repository.
 | `internal/rotate` | `onecheck logrotate` |
 | `internal/github`, `internal/install` | module install/update, self-update |
 | `internal/cli` | cobra commands |
+| `install.sh` | installer script (POSIX sh); tested by `internal/installsh` |
 | `docs/` | user documentation (Markdown) |
 
 ## Design rules that must hold

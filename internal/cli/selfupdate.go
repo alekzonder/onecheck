@@ -19,6 +19,9 @@ binary, verified against the release's checksums.txt, started once to prove
 it works, and then moved over the current binary in one step. If anything
 fails, the current binary stays as it is.
 
+A onecheck installed by install.sh is not updated this way: run install.sh
+again, it installs the new version next to the old one and switches to it.
+
 Modules are not touched; update them with "onecheck module update".
 Set GITHUB_TOKEN to raise GitHub's rate limit.`
 
@@ -65,5 +68,21 @@ func selfUpdateTarget() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot find the running binary: %w", err)
 	}
-	return filepath.EvalSymlinks(exe)
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "", err
+	}
+	return exe, checkSelfUpdatable(exe)
+}
+
+// checkSelfUpdatable refuses a binary that install.sh put into
+// <root>/versions/<version>/onecheck: replacing it in place would leave a
+// newer onecheck in the directory of an older version.
+func checkSelfUpdatable(exe string) error {
+	dir := filepath.Dir(exe)
+	if filepath.Base(filepath.Dir(dir)) != "versions" {
+		return nil
+	}
+	return fmt.Errorf("%s was installed by install.sh, which keeps each version in its own directory; "+
+		"run install.sh again to install another version and switch to it (see docs/getting-started.md)", exe)
 }
