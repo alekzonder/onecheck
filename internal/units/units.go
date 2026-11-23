@@ -10,9 +10,13 @@ import (
 var byteUnits = map[string]float64{
 	"":   1,
 	"b":  1,
+	"k":  1 << 10,
 	"kb": 1 << 10,
+	"m":  1 << 20,
 	"mb": 1 << 20,
+	"g":  1 << 30,
 	"gb": 1 << 30,
+	"t":  1 << 40,
 	"tb": 1 << 40,
 }
 
@@ -28,13 +32,13 @@ var durationUnits = map[string]float64{
 	"w":  604800,
 }
 
-// ParseBytes converts a size such as "10MB" or "1.5KB" into bytes.
+// ParseBytes converts a size such as "10MB", "1.5KB" or "10k" into bytes.
 // Units are 1024-based and case-insensitive; a bare number means bytes.
 func ParseBytes(s string) (float64, error) {
 	num, unit := splitNumber(strings.TrimSpace(s))
 	mult, ok := byteUnits[strings.ToLower(strings.TrimSpace(unit))]
 	if num == "" || !ok {
-		return 0, fmt.Errorf("invalid size %q (expected a number with an optional unit B, KB, MB, GB or TB)", s)
+		return 0, fmt.Errorf("invalid size %q (expected a number with an optional unit B, K/KB, M/MB, G/GB or T/TB)", s)
 	}
 	v, err := strconv.ParseFloat(num, 64)
 	if err != nil || v < 0 {

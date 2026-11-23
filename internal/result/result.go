@@ -41,6 +41,9 @@ type Result struct {
 	DurationMS  int64           `json:"duration_ms"`
 	Failures    []match.Failure `json:"failures"`
 	Error       *string         `json:"error"`
+	// Output holds the tail of the module's output fields (a command's
+	// stdout and stderr, a response body), kept for diagnosis.
+	Output map[string]any `json:"output"`
 }
 
 // MarshalJSON writes empty lists as [] rather than null.
@@ -52,6 +55,9 @@ func (r Result) MarshalJSON() ([]byte, error) {
 	}
 	if p.Failures == nil {
 		p.Failures = []match.Failure{}
+	}
+	if p.Output == nil {
+		p.Output = map[string]any{}
 	}
 	return json.Marshal(p)
 }

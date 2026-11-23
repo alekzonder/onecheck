@@ -29,8 +29,8 @@ var mod = module.Module{
 		ParamsSchema: json.RawMessage(paramsSchema),
 		Fields: map[string]module.FieldInfo{
 			"exit_code": {Type: module.TypeNumber, Description: "exit code of the command (-1 if it was killed by a signal)"},
-			"stdout":    {Type: module.TypeString, Description: "standard output"},
-			"stderr":    {Type: module.TypeString, Description: "standard error"},
+			"stdout":    {Type: module.TypeString, Description: "standard output", Output: true},
+			"stderr":    {Type: module.TypeString, Description: "standard error", Output: true},
 			"duration":  {Type: module.TypeDuration, Description: "seconds the command ran"},
 		},
 	},

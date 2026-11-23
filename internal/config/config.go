@@ -63,7 +63,7 @@ func defaultConfig() *Config {
 	c.Log.Rotate = Rotate{MaxSize: 10 << 20, Keep: 5, MaxAge: Duration(30 * 24 * time.Hour), Compress: true}
 	c.Events.TTL = Duration(24 * time.Hour)
 	c.Run = Run{Parallel: 4, MaxFieldSize: 10 << 20}
-	c.Defaults = Defaults{Timeout: Duration(30 * time.Second), FailAfter: 1, PassAfter: 1}
+	c.Defaults = Defaults{Timeout: Duration(30 * time.Second), FailAfter: 1, PassAfter: 1, OutputTail: 10 << 10}
 	c.Modules.Repos = []string{"alekzonder/onecheck"}
 
 	home, err := os.UserHomeDir()

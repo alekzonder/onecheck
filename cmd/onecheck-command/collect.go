@@ -69,7 +69,9 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	err := cmd.Run()
 	duration := time.Since(start).Seconds()
 	if ctx.Err() != nil {
-		return nil, fmt.Errorf("command timed out after %.1fs", duration)
+		// what the command printed before it was killed helps to see where it hung
+		partial := map[string]any{"stdout": stdout.buf.String(), "stderr": stderr.buf.String()}
+		return partial, fmt.Errorf("command timed out after %.1fs", duration)
 	}
 	exitCode := 0
 	var exitErr *exec.ExitError

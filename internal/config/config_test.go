@@ -347,3 +347,28 @@ rules:
 		t.Errorf("rule c = %+v", cfg.Rules[2])
 	}
 }
+
+func TestOutputTail(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	load := func(head, rule string) *Config {
+		t.Helper()
+		cfg, err := Load(write(t, t.TempDir(), "config.yaml", "name: main\n"+head+"rules:\n  - name: a\n    module: command\n"+rule))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	if got := load("", "").Rules[0].OutputTail; got != 10<<10 {
+		t.Errorf("default output_tail = %d, want 10240", got)
+	}
+	if got := load("defaults: {output_tail: 1k}\n", "").Rules[0].OutputTail; got != 1<<10 {
+		t.Errorf("defaults.output_tail 1k gives %d", got)
+	}
+	if got := load("defaults: {output_tail: 1k}\n", "    output_tail: 20k\n").Rules[0].OutputTail; got != 20<<10 {
+		t.Errorf("rule output_tail 20k gives %d", got)
+	}
+	r := load("", "    output_tail: 0\n").Rules[0]
+	if r.Err != nil || r.OutputTail != 0 {
+		t.Errorf("output_tail 0 must switch saving off: %d, %v", r.OutputTail, r.Err)
+	}
+}

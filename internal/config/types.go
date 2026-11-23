@@ -74,6 +74,9 @@ type Defaults struct {
 	Timeout   Duration `yaml:"timeout"`
 	FailAfter int      `yaml:"fail_after"`
 	PassAfter int      `yaml:"pass_after"`
+	// OutputTail is how much of each output field of a module (a command's
+	// stdout and stderr, a response body) is kept in the result.
+	OutputTail Size `yaml:"output_tail"`
 }
 
 // Modules configures module management.
@@ -105,6 +108,8 @@ type Rule struct {
 	Timeout   time.Duration
 	FailAfter int
 	PassAfter int
+	// OutputTail is how many bytes of each output field are saved; 0 = none.
+	OutputTail int64
 	// Params is the module input, with ${VAR} already expanded.
 	Params map[string]any
 	// Check holds the raw conditions for the matching engine.

@@ -48,6 +48,12 @@ TLS handshake or certificate error, timeout.
 `body` is limited by `run.max_field_size` (default `10MB`); a condition on a
 larger body ends the rule with status `error`.
 
+The tail of `body` (the last `10k` by default) and the `headers` are saved in
+the rule's result on every run, also when no condition mentions them, so a
+failed `status: 200` can be investigated afterwards. Change the size with
+`output_tail`, or set `output_tail: 0` for responses that hold secrets, see
+[output-and-results.md](../output-and-results.md#saved-output).
+
 `tls_expires_in` is absent for plain `http://` URLs, so a condition on it
 fails there.
 

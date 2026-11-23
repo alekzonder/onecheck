@@ -58,3 +58,12 @@ func TestParseDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestParseBytesShortUnits(t *testing.T) {
+	for in, want := range map[string]float64{"1k": 1024, "10K": 10240, "2m": 2 << 20, "1g": 1 << 30} {
+		got, err := ParseBytes(in)
+		if err != nil || got != want {
+			t.Errorf("ParseBytes(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+}

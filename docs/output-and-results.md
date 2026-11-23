@@ -148,7 +148,11 @@ The same object is used in JSON output, in result files and inside events.
       "message": "body json status: expected equals \"ok\", got \"degraded\""
     }
   ],
-  "error": null
+  "error": null,
+  "output": {
+    "body": "{\"status\":\"degraded\",\"db\":\"timeout\"}",
+    "headers": { "content-type": "application/json", "server": "nginx" }
+  }
 }
 ```
 
@@ -168,6 +172,7 @@ The same object is used in JSON output, in result files and inside events.
 | `duration_ms` | number | how long the check took |
 | `failures` | array | conditions that did not hold; `[]` unless `status` is `fail` |
 | `error` | string or null | why the check could not run; set only when `status` is `error` |
+| `output` | object | what the module saw, kept for diagnosis; `{}` if the module has no output fields or `output_tail` is `0`. See [Saved output](#saved-output) |
 
 Each element of `failures`:
 
@@ -179,3 +184,59 @@ Each element of `failures`:
 | `expected` | the operator's argument from the config |
 | `actual` | the value found; `null` if the path was missing; long values are cut to about 1 KB |
 | `message` | a ready-to-show sentence combining the above |
+
+## Saved output
+
+A failed `exit_code: 0` alone does not say what went wrong. So onecheck keeps
+the raw output of the check in the result, **whether or not a condition uses
+it and whether the rule passed or failed**:
+
+| Module | Saved fields |
+|---|---|
+| `command` | `stdout`, `stderr` |
+| `http` | `body`, `headers` |
+| `file` | nothing |
+
+Which fields are saved is decided by the module (it marks them as output, see
+[module-protocol.md](module-protocol.md)); how much is kept is decided by the
+config:
+
+```yaml
+defaults:
+  output_tail: 10k      # default for every rule; this is also the built-in default
+
+rules:
+  - name: backup
+    module: command
+    output_tail: 100k   # more for this rule
+    params: { run: /opt/backup/run.sh }
+    check: { exit_code: 0 }
+
+  - name: token-check
+    module: http
+    output_tail: 0      # keep nothing: the response holds secrets
+    params: { url: https://example.com/token }
+    check: { status: 200 }
+```
+
+- The size is per field and accepts `k`, `m` (`1k`, `10k`, `1m`) as well as
+  `KB`, `MB`; a bare number is bytes.
+- A longer text is cut to its **last** `output_tail` bytes and then starts
+  with `…`: the end of the output is where the error usually is.
+- A value that is not text (`headers`) is kept whole if it fits into
+  `output_tail` and left out otherwise.
+- A command killed by its `timeout` still has the output it printed before
+  that in `output`, next to `status: error`.
+- Output is cut from what the module returned, which is itself limited by
+  `run.max_field_size` (default `10MB`): of a larger output only the first
+  `max_field_size` bytes are seen at all.
+
+The result file is overwritten by the next run, so `output` always belongs to
+the latest run. An [event](state-and-events.md) embeds the result of the run
+that changed the state, including its `output`, so a notification can show
+why the check failed.
+
+Saved output may contain secrets (tokens in a response body, passwords
+printed by a script). Result directories are created with mode `0750` and
+files with `0640`; set `output_tail: 0` on rules whose output must not be
+stored.

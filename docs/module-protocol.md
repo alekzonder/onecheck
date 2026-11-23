@@ -60,7 +60,7 @@ free of side effects: onecheck calls it on every run and on install.
 | `version` | yes | module version (semver) |
 | `description` | no | one line, shown by `onecheck module list` |
 | `params_schema` | no | JSON Schema (draft 2020-12) for the rule's `params`; onecheck validates `params` with it before starting a check |
-| `fields` | yes | every field the module can return: name → `type`, `description` |
+| `fields` | yes | every field the module can return: name → `type`, `description`, and optionally `"output": true` |
 
 Field types:
 
@@ -69,6 +69,13 @@ Field types:
 | `string`, `number`, `bool`, `object`, `array` | the JSON type | |
 | `bytes` | number of bytes | conditions may use `10MB` etc. |
 | `duration` | number of seconds, may be fractional | conditions may use `500ms`, `1h` etc. |
+
+A field with `"output": true` is diagnostic output, like a command's stdout
+or a response body. onecheck asks for such fields on every check (they are
+added to `fields` of the request) and saves their tail in the result even if
+no condition uses them, see
+[output-and-results.md](output-and-results.md#saved-output). Mark only what
+helps to understand a failure and is not expensive to collect.
 
 Declaring fields lets `onecheck validate` reject a condition on a field that
 does not exist. Use `"additionalProperties": false` in `params_schema` so
@@ -96,7 +103,7 @@ Request:
 | `protocol` | protocol version onecheck is using for this call |
 | `rule` | rule name, for the module's own log messages |
 | `params` | the rule's `params`, already validated against `params_schema` |
-| `fields` | the fields the rule's conditions use. A module may skip collecting everything else, which matters for expensive fields. Empty when the rule has no conditions: then collect only what is cheap |
+| `fields` | the fields the rule's conditions use, plus the module's output fields unless the rule has `output_tail: 0`. A module may skip collecting everything else, which matters for expensive fields. Empty when the rule has no conditions: then collect only what is cheap |
 | `max_field_size` | largest size in bytes of one string value; do not read more than `max_field_size + 1` bytes of anything |
 | `timeout_ms` | the rule's timeout; finish before it |
 
@@ -114,7 +121,7 @@ Response:
 |---|---|
 | `fields` | field name → value. Omit a field that has no value in this situation |
 | `truncated` | names of string fields that were cut to `max_field_size`. onecheck refuses to evaluate conditions on them |
-| `error` | `null`, or `{"message": "..."}` when the data could not be collected |
+| `error` | `null`, or `{"message": "..."}` when the data could not be collected. `fields` may still carry output fields collected before the failure (what a command printed before its timeout); onecheck saves them and evaluates nothing |
 
 ## Rules of behaviour
 

@@ -29,6 +29,10 @@ const (
 type FieldInfo struct {
 	Type        FieldType `json:"type"`
 	Description string    `json:"description"`
+	// Output marks a field as diagnostic output (a command's stdout, a
+	// response body): onecheck asks for it on every check and keeps its
+	// tail in the result, whether or not a condition uses it.
+	Output bool `json:"output,omitempty"`
 }
 
 // Description is the answer to "onecheck-<name> describe".
@@ -46,7 +50,8 @@ type Request struct {
 	Protocol int             `json:"protocol"`
 	Rule     string          `json:"rule"`
 	Params   json.RawMessage `json:"params"`
-	// Fields lists the fields the rule's conditions use. A module may skip
+	// Fields lists the fields the rule's conditions use, plus the module's
+	// output fields when onecheck saves output. A module may skip
 	// collecting anything else. Empty means "collect everything cheap".
 	Fields       []string `json:"fields"`
 	MaxFieldSize int64    `json:"max_field_size"`

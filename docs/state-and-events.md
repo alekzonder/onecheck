@@ -119,7 +119,11 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
         "message": "status: expected equals 200, got 503"
       }
     ],
-    "error": null
+    "error": null,
+    "output": {
+      "body": "upstream connect error",
+      "headers": { "content-type": "text/plain" }
+    }
   }
 }
 ```

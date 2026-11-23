@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -560,5 +562,140 @@ func TestDebugLogShowsWhatWasAskedAndCollected(t *testing.T) {
 	}
 	if len(out) > 4000 {
 		t.Errorf("a 5000-byte field was logged in full (%d bytes of log)", len(out))
+	}
+}
+
+func (e *env) saved(rule string) result.Result {
+	e.t.Helper()
+	data, err := os.ReadFile(filepath.Join(e.dir, "results", "main", rule+".json"))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	var res result.Result
+	if err := json.Unmarshal(data, &res); err != nil {
+		e.t.Fatal(err)
+	}
+	return res
+}
+
+func TestCommandOutputIsSavedEvenWhenNotChecked(t *testing.T) {
+	e := newEnv(t)
+	res := e.run(`
+  - name: c
+    module: command
+    params: { run: "echo out; echo err >&2; exit 3" }
+    check: { exit_code: 0 }
+`, Options{})
+	if res[0].Status != result.Fail {
+		t.Fatalf("status = %s", res[0].Status)
+	}
+	for _, got := range []map[string]any{res[0].Output, e.saved("c").Output} {
+		if got["stdout"] != "out\n" || got["stderr"] != "err\n" {
+			t.Errorf("output = %v", got)
+		}
+	}
+	if ev := e.events(); len(ev) != 1 || ev[0].Result.Output["stderr"] != "err\n" {
+		t.Errorf("the fail event does not carry the output: %+v", ev)
+	}
+}
+
+func TestOutputIsCutToItsTail(t *testing.T) {
+	e := newEnv(t)
+	res := e.run(`
+  - name: c
+    module: command
+    output_tail: 1k
+    params: { run: "head -c 5000 /dev/zero | tr '\\0' a; echo THE-END" }
+    check: { exit_code: 0 }
+`, Options{})
+	out, _ := res[0].Output["stdout"].(string)
+	if !strings.HasPrefix(out, "…aaa") || !strings.HasSuffix(out, "aTHE-END\n") {
+		t.Errorf("not a marked tail: %.20q ... %.20q", out, out[max(0, len(out)-20):])
+	}
+	if got := len(strings.TrimPrefix(out, "…")); got != 1024 {
+		t.Errorf("tail is %d bytes, want 1024", got)
+	}
+}
+
+func TestOutputTailZeroSavesNothing(t *testing.T) {
+	e := newEnv(t)
+	res := e.run(`
+  - name: c
+    module: command
+    output_tail: 0
+    params: { run: "echo out" }
+    check: { exit_code: 0 }
+`, Options{})
+	if len(res[0].Output) != 0 {
+		t.Errorf("output = %v", res[0].Output)
+	}
+	if !strings.Contains(string(mustRead(t, filepath.Join(e.dir, "results", "main", "c.json"))), `"output": {}`) {
+		t.Error(`an empty output must be written as "output": {}`)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestTimedOutCommandKeepsItsOutput(t *testing.T) {
+	e := newEnv(t)
+	res := e.run(`
+  - name: c
+    module: command
+    timeout: 300ms
+    params: { run: "echo started; exec sleep 30" }
+    check: { exit_code: 0 }
+`, Options{})
+	if res[0].Status != result.Error || !strings.Contains(*res[0].Error, "timed out") {
+		t.Fatalf("status = %s error = %v", res[0].Status, res[0].Error)
+	}
+	if res[0].Output["stdout"] != "started\n" {
+		t.Errorf("output = %v", res[0].Output)
+	}
+}
+
+func TestFileModuleSavesNoOutput(t *testing.T) {
+	e := newEnv(t)
+	e.touch("f.txt", "secret content")
+	res := e.run(`
+  - name: f
+    module: file
+    params: { path: DATA/f.txt }
+    check: { content: { contains: secret } }
+`, Options{})
+	if res[0].Status != result.Pass || len(res[0].Output) != 0 {
+		t.Errorf("status = %s output = %v", res[0].Status, res[0].Output)
+	}
+}
+
+func TestHTTPBodyAndHeadersAreSaved(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Reason", "db down")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"no database"}`))
+	}))
+	defer srv.Close()
+	e := newEnv(t)
+	res := e.run(`
+  - name: h
+    module: http
+    params: { url: `+srv.URL+` }
+    check: { status: 200 }
+`, Options{})
+	if res[0].Status != result.Fail {
+		t.Fatalf("status = %s error = %v", res[0].Status, res[0].Error)
+	}
+	if res[0].Output["body"] != `{"error":"no database"}` {
+		t.Errorf("body = %v", res[0].Output["body"])
+	}
+	headers, _ := res[0].Output["headers"].(map[string]any)
+	if headers["x-reason"] != "db down" {
+		t.Errorf("headers = %v", res[0].Output["headers"])
 	}
 }

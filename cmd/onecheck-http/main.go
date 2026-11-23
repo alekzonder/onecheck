@@ -30,8 +30,8 @@ var mod = module.Module{
 		ParamsSchema: json.RawMessage(paramsSchema),
 		Fields: map[string]module.FieldInfo{
 			"status":         {Type: module.TypeNumber, Description: "HTTP status code"},
-			"headers":        {Type: module.TypeObject, Description: "response headers; names in lower case, repeated values joined with \", \""},
-			"body":           {Type: module.TypeString, Description: "response body"},
+			"headers":        {Type: module.TypeObject, Description: "response headers; names in lower case, repeated values joined with \", \"", Output: true},
+			"body":           {Type: module.TypeString, Description: "response body", Output: true},
 			"duration":       {Type: module.TypeDuration, Description: "seconds from sending the request to reading the whole body"},
 			"tls_expires_in": {Type: module.TypeDuration, Description: "seconds until the server certificate expires (https only)"},
 		},

@@ -38,6 +38,7 @@ defaults:                     # used by rules that do not set the key
   timeout: 30s
   fail_after: 1
   pass_after: 1
+  output_tail: 10k            # how much module output is kept in a result
 
 modules:
   repos:                      # default repositories for "onecheck module search"
@@ -51,6 +52,7 @@ rules:
     timeout: 10s              # the module is killed after this
     fail_after: 3             # consecutive failures before state "fail"
     pass_after: 2             # consecutive passes before state "pass" again
+    output_tail: 1k           # output kept in the result; 0 keeps none
     params:                   # input of the module, see docs/modules/
       url: https://example.com/health
     check:                    # conditions, see docs/checks.md

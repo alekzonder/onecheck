@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -19,10 +20,12 @@ import (
 
 // loadedModule is a described module, or the reason it cannot be used.
 type loadedModule struct {
-	info   *modules.Info
-	schema *jsonschema.Schema
-	types  match.FieldTypes
-	err    error
+	info *modules.Info
+	// outputs are the fields whose tail is saved with every result.
+	outputs []string
+	schema  *jsonschema.Schema
+	types   match.FieldTypes
+	err     error
 }
 
 // moduleSet describes each module at most once per run.
@@ -59,7 +62,11 @@ func (s *moduleSet) load(ctx context.Context, name string) *loadedModule {
 	m := &loadedModule{info: info, types: match.FieldTypes{}}
 	for field, fi := range info.Fields {
 		m.types[field] = fi.Type
+		if fi.Output {
+			m.outputs = append(m.outputs, field)
+		}
 	}
+	sort.Strings(m.outputs)
 	if len(info.ParamsSchema) > 0 {
 		m.schema, err = compileSchema(info.ParamsSchema)
 		if err != nil {

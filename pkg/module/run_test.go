@@ -110,3 +110,16 @@ func TestRunUnknownCommand(t *testing.T) {
 		t.Errorf("usage missing: %q", errOut.String())
 	}
 }
+
+func TestRunCollectErrorKeepsPartialFields(t *testing.T) {
+	m := testModule(func(context.Context, Request) (map[string]any, error) {
+		return map[string]any{"stdout": "so far"}, errors.New("timed out")
+	})
+	resp, _, _ := doCheck(t, m, `{"protocol":1,"rule":"r","params":{}}`)
+	if resp.Error == nil || resp.Error.Message != "timed out" {
+		t.Fatalf("error = %+v", resp.Error)
+	}
+	if resp.Fields["stdout"] != "so far" {
+		t.Errorf("partial fields were dropped: %v", resp.Fields)
+	}
+}

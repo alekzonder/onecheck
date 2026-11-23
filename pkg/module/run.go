@@ -12,7 +12,9 @@ import (
 
 // CollectFunc gathers field values for one check. Returning an error means
 // the data could not be collected at all (no network, no permission); the
-// absence of the checked object is a value, not an error.
+// absence of the checked object is a value, not an error. Fields returned
+// together with an error (output produced before a timeout) are passed on, so
+// onecheck can keep them for diagnosis.
 type CollectFunc func(ctx context.Context, req Request) (map[string]any, error)
 
 // Module is a complete check module: its description and its collector.
@@ -69,7 +71,6 @@ func runCheck(m Module, stdin io.Reader, stdout, stderr io.Writer) int {
 	fields, err := m.Collect(ctx, req)
 	if err != nil {
 		resp.Error = &Error{Message: err.Error()}
-		return writeJSON(stdout, stderr, resp)
 	}
 	for name, v := range fields {
 		if s, ok := v.(string); ok && req.MaxFieldSize > 0 && int64(len(s)) > req.MaxFieldSize {

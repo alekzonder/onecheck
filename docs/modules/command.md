@@ -39,6 +39,12 @@ rule ends with status `error` when the command could not be run at all
 Note that a rule does **not** require exit code `0` unless you say so. Add
 `exit_code: 0` to `check`.
 
+The tail of `stdout` and `stderr` (the last `10k` of each by default) is saved
+in the rule's result on every run, also when no condition mentions them and
+when the command hit the timeout, so a failure can be investigated afterwards.
+Change the size with `output_tail`, see
+[output-and-results.md](../output-and-results.md#saved-output).
+
 `stdout` and `stderr` are each limited by `run.max_field_size` (default
 `10MB`).
 

@@ -122,3 +122,24 @@ func TestDescriptionCoversFields(t *testing.T) {
 		t.Error("params_schema is not valid JSON")
 	}
 }
+
+func TestTimeoutKeepsOutputSoFar(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	raw, _ := json.Marshal(map[string]any{"run": "echo started; echo warn >&2; exec sleep 30"})
+	f, err := collect(ctx, module.Request{Params: raw, Fields: allFields, MaxFieldSize: 1024})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v", err)
+	}
+	if f["stdout"] != "started\n" || f["stderr"] != "warn\n" {
+		t.Errorf("output written before the timeout was lost: %v", f)
+	}
+}
+
+func TestOutputFieldsAreMarked(t *testing.T) {
+	for name, info := range mod.Description.Fields {
+		if want := name == "stdout" || name == "stderr"; info.Output != want {
+			t.Errorf("field %s: output = %v, want %v", name, info.Output, want)
+		}
+	}
+}

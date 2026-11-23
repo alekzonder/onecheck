@@ -6,9 +6,11 @@ package runner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -177,7 +179,7 @@ func runOne(ctx context.Context, cfg *config.Config, job prepared, log *slog.Log
 	req := module.Request{
 		Rule:         rule.Name,
 		Params:       job.params,
-		Fields:       job.check.Fields(),
+		Fields:       wantedFields(job),
 		MaxFieldSize: int64(cfg.Run.MaxFieldSize),
 	}
 	log.Debug("collecting fields", "rule", rule.Name, "module", rule.Module, "params", string(job.params),
@@ -190,6 +192,7 @@ func runOne(ctx context.Context, cfg *config.Config, job prepared, log *slog.Log
 	if err != nil {
 		return fail(err)
 	}
+	res.Output = savedOutput(resp.Fields, job)
 	if resp.Error != nil {
 		return fail(errors.New(resp.Error.Message))
 	}
@@ -253,6 +256,48 @@ func record(st *store.Store, cfg *config.Config, res *result.Result, now time.Ti
 		"consecutive", res.Consecutive, "fail_after", res.FailAfter, "pass_after", res.PassAfter)
 	logResult(log, res)
 	return nil
+}
+
+// wantedFields is what the module is asked for: the fields the conditions
+// use and, when output is saved, the module's output fields.
+func wantedFields(job prepared) []string {
+	fields := job.check.Fields()
+	if job.rule.OutputTail <= 0 {
+		return fields
+	}
+	for _, name := range job.mod.outputs {
+		if !slices.Contains(fields, name) {
+			fields = append(fields, name)
+		}
+	}
+	return fields
+}
+
+// savedOutput picks the module's output fields for the result. A string is
+// cut to its last output_tail bytes and then starts with "…"; any other
+// value is kept whole if its JSON fits into the limit and dropped otherwise,
+// because a cut JSON value is useless.
+func savedOutput(fields map[string]any, job prepared) map[string]any {
+	limit := job.rule.OutputTail
+	if limit <= 0 {
+		return nil
+	}
+	out := map[string]any{}
+	for _, name := range job.mod.outputs {
+		switch value := fields[name].(type) {
+		case nil:
+		case string:
+			if int64(len(value)) > limit {
+				value = "…" + strings.ToValidUTF8(value[int64(len(value))-limit:], "")
+			}
+			out[name] = value
+		default:
+			if data, err := json.Marshal(value); err == nil && int64(len(data)) <= limit {
+				out[name] = value
+			}
+		}
+	}
+	return out
 }
 
 // logValueLimit is how much of one field value a debug record shows.
