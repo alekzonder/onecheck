@@ -104,6 +104,6 @@ func (a *app) rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn or error (overrides the config)")
 	addRunFlags(root, run)
 
-	root.AddCommand(a.runCmd(), a.validateCmd(), a.versionCmd())
+	root.AddCommand(a.runCmd(), a.validateCmd(), a.logrotateCmd(), a.versionCmd())
 	return root
 }

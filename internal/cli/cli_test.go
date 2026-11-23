@@ -182,3 +182,44 @@ func TestHelpListsCommands(t *testing.T) {
 		t.Errorf("unknown command: code=%d err=%q", code, errOut)
 	}
 }
+
+func TestLogrotateCommand(t *testing.T) {
+	dir, cfg := setup(t, "events: {ttl: 1h}", failRule)
+	data, _ := os.ReadFile(cfg)
+	data = bytes.Replace(data, []byte("log: {dir: log}"), []byte("log: {dir: log, rotate: {max_size: 10B, keep: 2, compress: false}}"), 1)
+	if err := os.WriteFile(cfg, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	execute("-c", cfg) // writes a log and one "fail" event
+	events, _ := filepath.Glob(filepath.Join(dir, "events", "*.json"))
+	if len(events) != 1 {
+		t.Fatalf("events = %v", events)
+	}
+	expired := filepath.Join(dir, "events", "old.json")
+	if err := os.WriteFile(expired, []byte(`{"expires_at":"2020-01-01T00:00:00Z"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logFile := filepath.Join(dir, "log", "main", "onecheck.log")
+
+	code, out, errOut := execute("logrotate", "-c", cfg, "--events")
+	if code != 0 || !strings.Contains(out, "events: removed 1") {
+		t.Errorf("code=%d out=%q err=%q", code, out, errOut)
+	}
+	if _, err := os.Stat(expired); !os.IsNotExist(err) {
+		t.Error("the expired event must be removed")
+	}
+	if _, err := os.Stat(logFile + ".1"); err == nil {
+		t.Error("--events must not rotate logs")
+	}
+
+	code, out, errOut = execute("logrotate", "-c", cfg)
+	if code != 0 || !strings.Contains(out, "logs: rotated") || !strings.Contains(out, "events: removed 0") {
+		t.Errorf("code=%d out=%q err=%q", code, out, errOut)
+	}
+	if _, err := os.Stat(logFile + ".1"); err != nil {
+		t.Errorf("the log must be rotated to onecheck.log.1: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, "events", "*.json")); len(left) != 1 {
+		t.Errorf("the fresh event must stay: %v", left)
+	}
+}
