@@ -1,0 +1,76 @@
+# Example onecheck config. Copy to /etc/onecheck/config.yaml and adjust.
+# Check it with:  onecheck validate -c /etc/onecheck/config.yaml
+
+# Required. Separates results, state and logs of different configs on one host:
+#   <paths.results>/<name>/, <paths.state>/<name>/, <log.dir>/<name>/onecheck.log
+name: main
+
+log:
+  level: info            # debug | info | warn | error; --log-level overrides
+  dir: /var/log/onecheck
+  format: text           # text | json
+  rotate:                # used by "onecheck logrotate"
+    max_size: 10MB
+    keep: 5
+    max_age: 30d
+    compress: true
+
+paths:
+  modules: /usr/lib/onecheck/modules
+  results: /var/lib/onecheck/results
+  events: /var/lib/onecheck/events
+  state: /var/lib/onecheck/state
+
+# More rule files. Relative patterns are resolved against this file's directory.
+include:
+  - conf.d/*.yaml
+
+events:
+  ttl: 24h               # "onecheck logrotate" removes events older than this
+
+run:
+  parallel: 4            # checks running at the same time
+  max_field_size: 10MB   # largest value (file content, response body) a module may return
+
+defaults:                # for rules that do not set these themselves
+  timeout: 30s
+  fail_after: 1          # consecutive failures before the state becomes "fail"
+  pass_after: 1          # consecutive passes before the state becomes "pass" again
+
+modules:
+  repos:                 # searched by "onecheck module search" without arguments
+    - alekzonder/onecheck
+
+rules:
+  - name: passwd-sane
+    module: file
+    params:
+      path: /etc/passwd
+    check:
+      exists: true
+      type: file
+      mode: "0644"
+      owner: root
+      size: { gt: 0, lt: 1MB }
+      content: { contains: "root:" }
+
+  - name: tmp-not-huge
+    module: file
+    tags: [disk]
+    params:
+      path: /tmp
+    check:
+      type: dir
+      size: { lt: 5GB }
+      count: { lt: 10000 }
+
+  - name: load-average
+    module: command
+    tags: [system]
+    fail_after: 3        # three bad runs in a row before an event is written
+    pass_after: 2
+    params:
+      run: "cut -d' ' -f1 /proc/loadavg"
+    check:
+      exit_code: 0
+      stdout: { matches: '^[0-3]\.' }

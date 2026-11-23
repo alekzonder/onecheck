@@ -1,0 +1,43 @@
+# Include files contain only "rules".
+rules:
+  - name: site-up
+    module: http
+    tags: [web]
+    timeout: 10s
+    fail_after: 2
+    params:
+      url: https://example.com/
+    check:
+      status: { in: [200, 204] }
+      headers.content-type: { starts_with: text/html }
+      body: { contains: "Example Domain" }
+      duration: { lt: 2s }
+      tls_expires_in: { gt: 14d }
+
+  - name: api-health
+    module: http
+    tags: [web, api]
+    params:
+      url: https://api.example.com/health
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"   # taken from the environment
+    check:
+      status: 200
+      body:
+        json:
+          assert:
+            - { path: status, equals: ok }
+            - { path: checks.#, gte: 1 }
+            - { path: 'checks.#(state!="ok")#', length: 0 }
+          schema:
+            type: object
+            required: [status, version]
+
+  - name: nginx-active
+    module: command
+    tags: [web]
+    params:
+      argv: [systemctl, is-active, nginx]
+    check:
+      exit_code: 0
+      stdout: { matches: '(?m)^active$' }   # (?m): $ matches before the trailing newline

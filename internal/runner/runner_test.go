@@ -21,7 +21,7 @@ import (
 var modDir string
 
 func TestMain(m *testing.M) {
-	dir, err := testmods.Build("file", "command")
+	dir, err := testmods.Build("file", "command", "http")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

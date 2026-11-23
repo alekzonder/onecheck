@@ -234,7 +234,7 @@ rules:
     params:
       url: "https://example.com/${OC_TOKEN}/x"
       headers: {Authorization: "Bearer ${OC_TOKEN}"}
-      list: ["${OC_TOKEN}", "cost $$5", "plain $HOME"]
+      list: ["${OC_TOKEN}", "literal $${OC_TOKEN}", "plain $HOME and pid $$"]
     check:
       body: {contains: "${OC_TOKEN}"}
 `
@@ -250,7 +250,7 @@ rules:
 		t.Errorf("headers = %v", p["headers"])
 	}
 	list := p["list"].([]any)
-	if list[0] != "s3cret" || list[1] != "cost $5" || list[2] != "plain $HOME" {
+	if list[0] != "s3cret" || list[1] != "literal ${OC_TOKEN}" || list[2] != "plain $HOME and pid $$" {
 		t.Errorf("list = %v", list)
 	}
 	body := cfg.Rules[0].Check["body"].(map[string]any)

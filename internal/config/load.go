@@ -229,7 +229,8 @@ func (r *Rule) validate() error {
 }
 
 // expandEnv replaces ${VAR} in every string of v with the environment value.
-// "$$" produces a literal "$". An undefined variable is an error.
+// "$${VAR}" produces a literal "${VAR}"; any other "$" is left alone. An
+// undefined variable is an error.
 func expandEnv(v any) (any, error) {
 	switch x := v.(type) {
 	case string:
@@ -264,20 +265,18 @@ func expandEnv(v any) (any, error) {
 func expandString(s string) (string, error) {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
-		if s[i] != '$' || i+1 >= len(s) {
-			b.WriteByte(s[i])
-			continue
-		}
-		switch s[i+1] {
-		case '$':
-			b.WriteByte('$')
-			i++
-		case '{':
-			end := strings.IndexByte(s[i:], '}')
+		rest := s[i:]
+		switch {
+		case strings.HasPrefix(rest, "$${"):
+			// Escape: "$${VAR}" is a literal "${VAR}".
+			b.WriteString("${")
+			i += 2
+		case strings.HasPrefix(rest, "${"):
+			end := strings.IndexByte(rest, '}')
 			if end < 0 {
 				return "", fmt.Errorf("unterminated ${ in %q", s)
 			}
-			name := s[i+2 : i+end]
+			name := rest[2:end]
 			val, ok := os.LookupEnv(name)
 			if !ok {
 				return "", fmt.Errorf("environment variable %s is not set (used as ${%s} in params)", name, name)
@@ -285,7 +284,8 @@ func expandString(s string) (string, error) {
 			b.WriteString(val)
 			i += end
 		default:
-			b.WriteByte('$')
+			// Any other "$" is left alone, so shell syntax survives.
+			b.WriteByte(s[i])
 		}
 	}
 	return b.String(), nil
