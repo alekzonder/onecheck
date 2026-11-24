@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -59,5 +60,90 @@ func TestEventOutputMustNameOutputFields(t *testing.T) {
 	}
 	if res[1].Status != result.Error || !strings.Contains(*res[1].Error, "no output fields") {
 		t.Errorf("file: %+v", res[1])
+	}
+}
+
+func TestEventOfAnUnusableRuleMarksNoOutput(t *testing.T) {
+	e := newEnv(t)
+	e.run(failingCommand("    event_output: [exit_code]\n")+`
+  - name: ghost
+    module: nosuch
+    event_output: [stderr]
+`, Options{})
+	evs := e.events()
+	if len(evs) != 2 {
+		t.Fatalf("want two fail events, got %d", len(evs))
+	}
+	for _, ev := range evs {
+		if ev.OutputFields == nil || len(ev.OutputFields) != 0 {
+			t.Errorf("%s: output_fields = %v, want [] for a rule that could not be checked", ev.Rule, ev.OutputFields)
+		}
+	}
+}
+
+func TestEventOfARuleWithAnUnknownKeyStaysRedacted(t *testing.T) {
+	e := newEnv(t)
+	e.run(`
+  - name: typo
+    module: command
+    event_params: false
+    params: { run: "true" }
+    chek: { exit_code: 0 }
+`, Options{})
+	ev := e.eventJSON()
+	if string(ev["redacted"]) != "true" || string(ev["params"]) != "null" {
+		t.Errorf("redacted = %s, params = %s", ev["redacted"], ev["params"])
+	}
+}
+
+func TestValidateCatchesParamsThatDoNotGoTogether(t *testing.T) {
+	e := newEnv(t)
+	cfg := e.load(`
+  - {name: ok-disk-path, module: disk, params: {path: /}}
+  - {name: ok-disk-all, module: disk}
+  - {name: ok-disk-exclude, module: disk, params: {exclude_fstype: [nfs*], exclude_mount: [/mnt/*]}}
+  - {name: ok-unit, module: systemd, params: {unit: a.service, properties: [MemoryCurrent]}}
+  - {name: ok-state, module: systemd, params: {state: failed, exclude: ["user@*"], user: true}}
+  - {name: disk-path-exclude, module: disk, params: {path: /, exclude_mount: [/mnt/*]}}
+  - {name: disk-path-fstype, module: disk, params: {path: /, exclude_fstype: [nfs]}}
+  - {name: sd-both, module: systemd, params: {unit: a.service, state: failed}}
+  - {name: sd-unit-exclude, module: systemd, params: {unit: a.service, exclude: [x]}}
+  - {name: sd-state-properties, module: systemd, params: {state: failed, properties: [MemoryCurrent]}}
+  - {name: sd-neither, module: systemd, params: {user: true}}
+  - {name: sd-typo, module: systemd, params: {state: faild}}
+`)
+	want := map[string][]string{
+		"disk-path-exclude":   {"/exclude_mount", "not allowed"},
+		"disk-path-fstype":    {"/exclude_fstype", "not allowed"},
+		"sd-both":             {"/unit", "not allowed"},
+		"sd-unit-exclude":     {"/exclude", "not allowed"},
+		"sd-state-properties": {"/properties", "not allowed"},
+		"sd-neither":          {"'unit'", "'state'"},
+		"sd-typo":             {"/state"},
+	}
+	errs := Validate(context.Background(), cfg)
+	if len(errs) != len(want) {
+		t.Errorf("want %d errors, got %d: %v", len(want), len(errs), errs)
+	}
+	for _, err := range errs {
+		text := err.Error()
+		if strings.Contains(text, "oneOf") || strings.Contains(text, "&{") || strings.Contains(text, "false schema") {
+			t.Errorf("not worded for a person: %s", text)
+		}
+		found := false
+		for rule, parts := range want {
+			if !strings.Contains(text, "rule "+rule+":") {
+				continue
+			}
+			found = true
+			for _, part := range parts {
+				if !strings.Contains(text, part) {
+					t.Errorf("%s: %q lacks %q", rule, text, part)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("unexpected error: %s", text)
+		}
 	}
 }

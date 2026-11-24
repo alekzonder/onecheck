@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -197,16 +198,12 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	var raw rawRule
 	// Decoding the node (not its text) keeps anchors defined in other rules
 	// usable; unknown keys are then checked by hand.
-	err := node.Decode(&raw)
-	if err == nil {
-		err = unknownRuleKeys(node)
-	}
-	if err != nil {
+	if err := node.Decode(&raw); err != nil {
 		rule.Err = fmt.Errorf("invalid rule: %s", strings.TrimPrefix(err.Error(), "yaml: "))
 		return rule
 	}
 	rule.Module, rule.Tags, rule.Check = raw.Module, raw.Tags, raw.Check
-	rule.EventOutput = raw.EventOutput
+	rule.EventOutput = unique(raw.EventOutput)
 	if raw.Enabled != nil {
 		rule.Enabled = *raw.Enabled
 	}
@@ -230,6 +227,13 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	}
 	// expandEnv builds a new value, so the params as written stay intact.
 	rule.RawParams = raw.Params
+	// A rule with a key it does not have is unusable, but it is still
+	// reported through events: the keys that were understood (above all
+	// event_params and remind_every) must keep working for it.
+	if err := unknownRuleKeys(node); err != nil {
+		rule.Err = fmt.Errorf("invalid rule: %w", err)
+		return rule
+	}
 	params, err := expandEnv(raw.Params)
 	if err != nil {
 		rule.Err = err
@@ -238,6 +242,17 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	rule.Params, _ = params.(map[string]any)
 	rule.Err = rule.validate()
 	return rule
+}
+
+// unique drops repeated names, keeping the first of each.
+func unique(names []string) []string {
+	var out []string
+	for _, name := range names {
+		if !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 var ruleKeys = map[string]bool{

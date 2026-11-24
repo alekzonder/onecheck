@@ -12,6 +12,8 @@ import (
 const paramsSchema = `{
   "type": "object",
   "additionalProperties": false,
+  "if": {"required": ["path"]},
+  "then": {"properties": {"exclude_fstype": false, "exclude_mount": false}},
   "properties": {
     "path": {"type": "string", "minLength": 1, "description": "mount point, any path inside a filesystem, or a device under /dev/; all filesystems of the host are listed when omitted"},
     "exclude_fstype": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "without path: shell patterns of filesystem types to leave out"},

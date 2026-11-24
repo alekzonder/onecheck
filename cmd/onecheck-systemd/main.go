@@ -12,7 +12,10 @@ import (
 const paramsSchema = `{
   "type": "object",
   "additionalProperties": false,
-  "oneOf": [{"required": ["unit"]}, {"required": ["state"]}],
+  "anyOf": [{"required": ["unit"]}, {"required": ["state"]}],
+  "if": {"required": ["state"]},
+  "then": {"properties": {"unit": false, "properties": false}},
+  "else": {"properties": {"exclude": false}},
   "properties": {
     "unit": {"type": "string", "minLength": 1, "description": "unit name, e.g. nginx.service or backup.timer; no patterns"},
     "state": {"enum": ["failed", "active", "inactive", "activating", "deactivating", "reloading", "maintenance", "refreshing", "loaded", "not-found", "bad-setting", "error", "masked"], "description": "instead of unit: list the units in this load or active state, e.g. failed"},

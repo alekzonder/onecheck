@@ -618,3 +618,41 @@ rules:
 		t.Errorf("typo: %v", r[3].Err)
 	}
 }
+
+func TestRuleWithAnUnknownKeyKeepsItsOtherKeys(t *testing.T) {
+	cfg, err := Load(write(t, t.TempDir(), "config.yaml", `name: main
+rules:
+  - name: typo
+    module: command
+    tags: [db]
+    event_params: false
+    remind_every: 0
+    fail_after: 3
+    chek: {exit_code: 0}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Rules[0]
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "chek") {
+		t.Fatalf("err = %v, want the unknown key", r.Err)
+	}
+	if r.EventParams || r.RemindEvery != 0 || !r.RemindExplicit || r.FailAfter != 3 || r.Module != "command" || len(r.Tags) != 1 {
+		t.Errorf("a broken rule must still hide its details and keep its settings: %+v", r)
+	}
+}
+
+func TestEventOutputDropsDuplicates(t *testing.T) {
+	cfg, err := Load(write(t, t.TempDir(), "config.yaml", `name: main
+rules:
+  - name: c
+    module: command
+    event_output: [stderr, stdout, stderr]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Rules[0].EventOutput, ","); got != "stderr,stdout" {
+		t.Errorf("event_output = %s", got)
+	}
+}

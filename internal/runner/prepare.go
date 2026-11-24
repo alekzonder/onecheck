@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -106,8 +107,18 @@ type prepared struct {
 }
 
 // prepare validates one rule against its module. Every problem it finds is a
-// rule-level error: it makes this rule unusable and nothing else.
+// rule-level error: it makes this rule unusable and nothing else. An
+// unusable rule allows no output to be shown: its event_output was not, or
+// could not be, checked against the module.
 func prepare(ctx context.Context, rule config.Rule, mods *moduleSet) prepared {
+	p := prepareRule(ctx, rule, mods)
+	if p.err != nil {
+		p.rule.EventOutput = nil
+	}
+	return p
+}
+
+func prepareRule(ctx context.Context, rule config.Rule, mods *moduleSet) prepared {
 	p := prepared{rule: rule}
 	if rule.Err != nil {
 		p.err = rule.Err
@@ -180,7 +191,12 @@ var schemaPrinter = message.NewPrinter(language.English)
 func collectSchemaErrors(e *jsonschema.ValidationError, out *[]string) {
 	if len(e.Causes) == 0 {
 		loc := "/" + strings.Join(e.InstanceLocation, "/")
-		*out = append(*out, fmt.Sprintf("%s: %s", loc, e.ErrorKind.LocalizedString(schemaPrinter)))
+		msg := e.ErrorKind.LocalizedString(schemaPrinter)
+		// A module forbids a param in some combination with "name": false.
+		if _, forbidden := e.ErrorKind.(*kind.FalseSchema); forbidden {
+			msg = "not allowed together with the other params"
+		}
+		*out = append(*out, fmt.Sprintf("%s: %s", loc, msg))
 		return
 	}
 	for _, cause := range e.Causes {
