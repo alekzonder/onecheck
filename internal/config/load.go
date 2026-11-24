@@ -32,6 +32,7 @@ type rawRule struct {
 	PassAfter   *int           `yaml:"pass_after"`
 	OutputTail  *Size          `yaml:"output_tail"`
 	EventParams *bool          `yaml:"event_params"`
+	RemindEvery *Duration      `yaml:"remind_every"`
 	Params      map[string]any `yaml:"params"`
 	Check       map[string]any `yaml:"check"`
 }
@@ -187,6 +188,10 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 		PassAfter:   c.Defaults.PassAfter,
 		OutputTail:  int64(c.Defaults.OutputTail),
 		EventParams: c.Defaults.EventParams,
+		RemindEvery: DefaultRemindEvery,
+	}
+	if d := c.Defaults.RemindEvery; d != nil {
+		rule.RemindEvery, rule.RemindExplicit = time.Duration(*d), true
 	}
 	var raw rawRule
 	// Decoding the node (not its text) keeps anchors defined in other rules
@@ -218,6 +223,9 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	if raw.EventParams != nil {
 		rule.EventParams = *raw.EventParams
 	}
+	if raw.RemindEvery != nil {
+		rule.RemindEvery, rule.RemindExplicit = time.Duration(*raw.RemindEvery), true
+	}
 	// expandEnv builds a new value, so the params as written stay intact.
 	rule.RawParams = raw.Params
 	params, err := expandEnv(raw.Params)
@@ -232,7 +240,7 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 
 var ruleKeys = map[string]bool{
 	"name": true, "module": true, "tags": true, "enabled": true, "timeout": true,
-	"fail_after": true, "pass_after": true, "output_tail": true, "event_params": true, "params": true, "check": true,
+	"fail_after": true, "pass_after": true, "output_tail": true, "event_params": true, "remind_every": true, "params": true, "check": true,
 	"<<": true, // YAML merge key
 }
 
@@ -246,7 +254,7 @@ func unknownRuleKeys(node *yaml.Node) error {
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if key := node.Content[i].Value; !ruleKeys[key] {
-			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, output_tail, event_params, params, check)",
+			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, output_tail, event_params, remind_every, params, check)",
 				node.Content[i].Line, key)
 		}
 	}

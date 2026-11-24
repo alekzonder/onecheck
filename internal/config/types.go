@@ -80,7 +80,14 @@ type Defaults struct {
 	// EventParams says whether events carry the rule's params (as written
 	// in the config) and may be shown in full by a notification service.
 	EventParams bool `yaml:"event_params"`
+	// RemindEvery is how often a rule that stays failed writes a reminder
+	// event; 0 turns reminders off. Nil means the config does not set it
+	// and DefaultRemindEvery applies.
+	RemindEvery *Duration `yaml:"remind_every"`
 }
+
+// DefaultRemindEvery is the reminder interval of a config that sets none.
+const DefaultRemindEvery = time.Hour
 
 // Modules configures module management.
 type Modules struct {
@@ -122,6 +129,12 @@ type Rule struct {
 	RawParams map[string]any
 	// EventParams is false when the rule's details must stay out of events.
 	EventParams bool
+	// RemindEvery is how often the rule writes a reminder event while its
+	// confirmed state is fail; 0 = never.
+	RemindEvery time.Duration
+	// RemindExplicit is true when RemindEvery was written in the config,
+	// on the rule or in defaults, and false for the built-in default.
+	RemindExplicit bool
 	// Check holds the raw conditions for the matching engine.
 	Check map[string]any
 	// Source is the file the rule was read from.

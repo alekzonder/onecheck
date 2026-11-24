@@ -508,3 +508,80 @@ func TestEventParamsNotBoolean(t *testing.T) {
 		t.Error("event_params: maybe must make the rule invalid")
 	}
 }
+
+func TestRemindEveryDefaultsAndOverride(t *testing.T) {
+	load := func(defaults string) []Rule {
+		t.Helper()
+		path := write(t, t.TempDir(), "config.yaml", "name: main\n"+defaults+`rules:
+  - name: plain
+    module: file
+  - name: own
+    module: file
+    remind_every: 10m
+  - name: off
+    module: file
+    remind_every: 0
+`)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range cfg.Rules {
+			if r.Err != nil {
+				t.Fatalf("rule %s: %v", r.Name, r.Err)
+			}
+		}
+		return cfg.Rules
+	}
+	type remind struct {
+		every    time.Duration
+		explicit bool
+	}
+	got := func(rules []Rule) [3]remind {
+		var out [3]remind
+		for i, r := range rules {
+			out[i] = remind{r.RemindEvery, r.RemindExplicit}
+		}
+		return out
+	}
+	own, off := remind{10 * time.Minute, true}, remind{0, true}
+	if g := got(load("")); g != [3]remind{{time.Hour, false}, own, off} {
+		t.Errorf("built-in default: %v", g)
+	}
+	if g := got(load("defaults: {remind_every: 2h}\n")); g != [3]remind{{2 * time.Hour, true}, own, off} {
+		t.Errorf("defaults.remind_every 2h: %v", g)
+	}
+	if g := got(load("defaults: {remind_every: 0}\n")); g != [3]remind{{0, true}, own, off} {
+		t.Errorf("defaults.remind_every 0: %v", g)
+	}
+}
+
+func TestRemindEveryInvalid(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Load(write(t, dir, "config.yaml", `name: main
+rules:
+  - name: negative
+    module: file
+    remind_every: -5m
+  - name: words
+    module: file
+    remind_every: soon
+  - name: typo
+    module: file
+    remind_evry: 1h
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range cfg.Rules[:2] {
+		if r.Err == nil || !strings.Contains(r.Err.Error(), "invalid duration") {
+			t.Errorf("rule %s: err = %v, want an invalid duration", r.Name, r.Err)
+		}
+	}
+	if err := cfg.Rules[2].Err; err == nil || !strings.Contains(err.Error(), "event_params, remind_every, params") {
+		t.Errorf("typo: err = %v, want the known keys including remind_every", err)
+	}
+	if _, err := Load(write(t, dir, "bad.yaml", "name: main\ndefaults: {remind_every: -1h}\n")); err == nil {
+		t.Error("a negative defaults.remind_every must make the config unusable")
+	}
+}
