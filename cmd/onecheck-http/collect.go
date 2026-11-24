@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -35,7 +37,7 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, strings.ToUpper(p.Method), p.URL, strings.NewReader(p.Body))
 	if err != nil {
-		return nil, err
+		return nil, requestError(err)
 	}
 	httpReq.Header.Set("User-Agent", "onecheck-http/"+version.Version)
 	for name, value := range p.Headers {
@@ -48,7 +50,7 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	start := time.Now()
 	resp, err := client(p).Do(httpReq)
 	if err != nil {
-		return nil, err
+		return nil, requestError(err)
 	}
 	defer resp.Body.Close()
 	var body io.Reader = resp.Body
@@ -75,6 +77,27 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 		out["tls_expires_in"] = time.Until(resp.TLS.PeerCertificates[0].NotAfter).Seconds()
 	}
 	return out, nil
+}
+
+// safeURL is the part of a URL that may be shown in an error: scheme, host
+// and path. The query string and the userinfo can hold tokens and passwords.
+func safeURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "<invalid url>"
+	}
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
+}
+
+// requestError rebuilds the error of a failed request around safeURL. Go puts
+// the whole URL into it, after ${VAR} expansion and after redirects, and the
+// error text ends up in results, events, logs and notifications.
+func requestError(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	return fmt.Errorf("%s %q: %w", ue.Op, safeURL(ue.URL), ue.Err)
 }
 
 func client(p params) *http.Client {

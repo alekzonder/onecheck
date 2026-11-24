@@ -151,3 +151,60 @@ func TestDescriptionCoversFields(t *testing.T) {
 		t.Error("params_schema is not valid JSON")
 	}
 }
+
+func TestSafeURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://u:p@h.example/a/b?t=secret#f": "https://h.example/a/b",
+		"http://h:8080/":                       "http://h:8080/",
+		"http://[::1":                          "<invalid url>",
+		"not a url":                            "<invalid url>",
+	} {
+		if got := safeURL(in); got != want {
+			t.Errorf("safeURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRequestErrorHidesSecrets(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	closed := strings.TrimPrefix(srv.URL, "http://")
+	srv.Close()
+	_, err := run(t, map[string]any{"url": "http://user:pass@" + closed + "/health?token=secret"}, 1024)
+	if err == nil {
+		t.Fatal("connection failure must be an error")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "secret") || strings.Contains(msg, "pass") || strings.Contains(msg, "user") {
+		t.Errorf("the error shows secrets: %s", msg)
+	}
+	if !strings.Contains(msg, closed+"/health") {
+		t.Errorf("the error must name host and path: %s", msg)
+	}
+}
+
+func TestRedirectErrorHidesSecrets(t *testing.T) {
+	dead := httptest.NewServer(http.NotFoundHandler())
+	target := dead.URL + "/next?token=secret"
+	dead.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target, http.StatusFound)
+	}))
+	defer srv.Close()
+	_, err := run(t, map[string]any{"url": srv.URL + "/?first=hidden"}, 1024)
+	if err == nil {
+		t.Fatal("a redirect to a closed port must be an error")
+	}
+	if msg := err.Error(); strings.Contains(msg, "secret") || strings.Contains(msg, "hidden") {
+		t.Errorf("the error shows a query string: %s", msg)
+	}
+}
+
+func TestUnparsableURLIsNotEchoed(t *testing.T) {
+	_, err := run(t, map[string]any{"url": "http://h/\x7f?token=secret"}, 1024)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if strings.Contains(err.Error(), "secret") {
+		t.Errorf("the error shows the query string: %s", err)
+	}
+}
