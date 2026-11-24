@@ -494,3 +494,11 @@ func TestArrayConditionCompileErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestAnyOnElementShowsReferencedKeys(t *testing.T) {
+	fields := `{"c": [{"name": "miner", "image": "xmrig", "labels": {"a": "` + strings.Repeat("x", 2000) + `"}}]}`
+	got := evalOn(t, fields, `c: {every: {any: [{path: name, in: [nginx]}, {path: image, glob: "registry.local/*"}]}}`)
+	if len(got) != 1 || !strings.HasSuffix(got[0].Message, `got {"image":"xmrig","name":"miner"}`) {
+		t.Errorf("failures = %+v", got)
+	}
+}

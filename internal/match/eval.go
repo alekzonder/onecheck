@@ -147,8 +147,45 @@ func (n anyNode) eval(r recorder, v value) bool {
 			return true
 		}
 	}
-	r.fail("any", n.raw, v, "")
+	r.fail("any", n.raw, focus(v, n.children), "")
 	return false
+}
+
+// focus narrows an object shown in a failure to the keys the condition
+// looks at through "path", so a large element (e.g. one with many labels)
+// still shows what decided the result.
+func focus(v value, n node) value {
+	obj, ok := v.v.(map[string]any)
+	if !ok {
+		return v
+	}
+	keys := map[string]struct{}{}
+	referencedKeys(n, keys)
+	if len(keys) == 0 {
+		return v
+	}
+	out := make(map[string]any, len(keys))
+	for k := range keys {
+		if val, has := obj[k]; has {
+			out[k] = val
+		}
+	}
+	return value{v: out, exists: true}
+}
+
+func referencedKeys(n node, keys map[string]struct{}) {
+	switch x := n.(type) {
+	case pathNode:
+		keys[topField(x.path)] = struct{}{}
+	case allNode:
+		for _, c := range x {
+			referencedKeys(c, keys)
+		}
+	case anyNode:
+		referencedKeys(x.children, keys)
+	case notNode:
+		referencedKeys(x.inner, keys)
+	}
 }
 
 type notNode struct {

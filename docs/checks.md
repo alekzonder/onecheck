@@ -253,11 +253,11 @@ A value that is not an array, or a missing path, does not hold.
 
 `every` reports each failing element separately, with its index in the
 path: `containers.2.state: expected equals "running", got "exited"`. When an
-element fails an `any`, the message shows the whole element, so you see which
-one it was:
+element fails an `any`, the message shows the element's keys that the
+conditions look at through `path`, so you see which one it was:
 
 ```
-containers.#(state=="running")#.1: expected any [...], got {"image":"xmrig/xmrig","name":"miner",...}
+containers.#(state=="running")#.1: expected any [...], got {"image":"xmrig/xmrig","name":"miner"}
 ```
 
 `some` reports one failure with the whole array.
