@@ -103,7 +103,7 @@ func topTyping(path, field string, ft module.FieldType, elems FieldTypes) typing
 	switch {
 	case oneElement(rest):
 		return typing{keys: elems}
-	case strings.HasPrefix(rest, "#(") && strings.HasSuffix(rest, ")#") && !strings.Contains(rest, ")."):
+	case strings.HasPrefix(rest, "#(") && strings.HasSuffix(rest, ")#") && !strings.Contains(rest, ").") && !strings.Contains(rest, "|"):
 		return typing{elems: elems}
 	}
 	if i := strings.LastIndex(rest, "."); i > 0 && oneElement(rest[:i]) {
@@ -113,10 +113,11 @@ func topTyping(path, field string, ft module.FieldType, elems FieldTypes) typing
 }
 
 // oneElement reports whether a path segment picks a single element of an
-// array: an index, or a query for the first match.
+// array: an index, or a query for the first match. A segment that goes on
+// after the query (").", "|") reaches inside the element and is not one.
 func oneElement(seg string) bool {
 	if strings.HasPrefix(seg, "#(") {
-		return strings.HasSuffix(seg, ")") && !strings.Contains(seg, ").")
+		return strings.HasSuffix(seg, ")") && !strings.Contains(seg, ").") && !strings.Contains(seg, "|")
 	}
 	if seg == "" {
 		return false

@@ -153,8 +153,10 @@ Things to know:
 
 - If a listed filesystem cannot be queried (a stale NFS mount, no
   permission), the rule is an `error` that names the mount point: fix the
-  mount or put it into `exclude_mount`. An excluded filesystem is not
-  touched at all, so a network mount that hangs can be left out.
+  mount or put it into `exclude_mount`. A network mount that hangs does not
+  answer at all: the rule then ends with a timeout `error` that names no
+  mount point. An excluded filesystem is not touched, so such a mount can be
+  left out.
 - No filesystems after the exclusions is `filesystems: []`, `count: 0`, not
   an error; `count: { gte: 1 }` catches a list that became empty.
 - The fields of a single filesystem (`used_percent`, ...) are missing at the

@@ -86,7 +86,12 @@ func oncePerDevice(ms []mount) []mount {
 	for _, m := range best {
 		out = append(out, m)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Mountpoint < out[j].Mountpoint })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Mountpoint != out[j].Mountpoint {
+			return out[i].Mountpoint < out[j].Mountpoint
+		}
+		return out[i].Device < out[j].Device
+	})
 	return out
 }
 

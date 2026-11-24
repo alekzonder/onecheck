@@ -19,8 +19,13 @@ type unit struct {
 	Description string `json:"description"`
 }
 
-// stateName is a systemd load, active or sub state: failed, not-found, ...
-var stateName = regexp.MustCompile(`^[a-z][a-z-]*$`)
+// states are the load and active states of systemd. systemctl prints an
+// empty list for a state it does not know, so a misspelt one would look
+// like "no such units" forever: only known names are accepted.
+var states = []string{
+	"failed", "active", "inactive", "activating", "deactivating", "reloading", "maintenance", "refreshing",
+	"loaded", "not-found", "bad-setting", "error", "masked",
+}
 
 // collectList reports the units in params.state, without those a pattern
 // of params.exclude matches.
@@ -66,7 +71,9 @@ func parseUnits(text string) []unit {
 	var units []unit
 	for line := range strings.SplitSeq(text, "\n") {
 		f := strings.Fields(line)
-		if len(f) < 4 {
+		// A unit name always has a type suffix; a legend line does not
+		// start with one.
+		if len(f) < 4 || !strings.Contains(f[0], ".") {
 			continue
 		}
 		u := unit{Name: f[0], LoadState: f[1], ActiveState: f[2], SubState: f[3]}

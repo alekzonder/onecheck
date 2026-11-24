@@ -621,6 +621,8 @@ func TestElementUnitsNeedADeclaredType(t *testing.T) {
 		`disks: {gt: 5GB}`,                       // the array itself
 		`disks: {length: {gt: 5GB}}`,
 		`disks: {every: {path: free.x, gt: 5GB}}`,
+		`'disks.#(name=="b")|tags.#(free>0)': {path: free, gt: 5GB}`, // an array inside an element
+		`'disks.#(name=="b")|tags|#(free>0)': {path: free, gt: 5GB}`,
 	} {
 		if _, err := compileDisks(t, check, diskElements); err == nil {
 			t.Errorf("%s: must not compile", check)

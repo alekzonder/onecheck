@@ -88,8 +88,8 @@ func (p params) validate() error {
 }
 
 func (p params) validateList() error {
-	if !stateName.MatchString(p.State) {
-		return fmt.Errorf("invalid params: state %q is not a systemd state name", p.State)
+	if !slices.Contains(states, p.State) {
+		return fmt.Errorf("invalid params: state %q is not one of %s", p.State, strings.Join(states, ", "))
 	}
 	if len(p.Properties) > 0 {
 		return errors.New("invalid params: properties works with unit, not with state")

@@ -174,9 +174,12 @@ FAIL   no-failed-units   (systemd, 14ms)
 
 - Nothing in the state gives `names: []`, `units: []`, `count: 0`, not an
   error.
-- `state` takes any state name systemd knows, the same as
-  `systemctl list-units --state=`: `failed`, `active`, `inactive`,
-  `activating`, `not-found`, ...
+- `state` is a load or active state of systemd: `failed`, `active`,
+  `inactive`, `activating`, `deactivating`, `reloading`, `maintenance`,
+  `refreshing`, `loaded`, `not-found`, `bad-setting`, `error`, `masked`.
+  Any other name is an error of the rule: systemd itself answers a state it
+  does not know with an empty list, and a misspelt `faild` would pass
+  forever.
 - `user: true` lists the units of the user's service manager.
 - The fields of a single unit (`active_state`, `restarts`, ...) are missing
   in this mode, and `units`, `names`, `count` are missing with `unit`.

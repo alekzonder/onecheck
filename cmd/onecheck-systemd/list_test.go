@@ -88,6 +88,7 @@ func TestListParamsErrors(t *testing.T) {
 		"exclude with unit":      {"unit": "nginx", "exclude": []string{"a*"}},
 		"properties with state":  {"state": "failed", "properties": []string{"MemoryCurrent"}},
 		"state is not a name":    {"state": "failed --user"},
+		"state is misspelt":      {"state": "faild"},
 	} {
 		if _, err := run(t, params); err == nil || !strings.Contains(err.Error(), "invalid params") {
 			t.Errorf("%s: err = %v, want invalid params", name, err)
@@ -136,5 +137,27 @@ func TestFailureOfTheRecommendedCheckNamesTheUnits(t *testing.T) {
 	_ = json.Unmarshal(data, &fields)
 	if failures, err := check.Eval(fields, nil); err != nil || len(failures) != 0 {
 		t.Errorf("nothing failed must pass: %+v, %v", failures, err)
+	}
+}
+
+func TestUnknownStateIsAnError(t *testing.T) {
+	fakeSystemctl(t, map[string]string{"list-units": ""})
+	for _, state := range []string{"faild", "help", "running"} {
+		_, err := run(t, map[string]any{"state": state})
+		if err == nil || !strings.Contains(err.Error(), "invalid params") || !strings.Contains(err.Error(), "failed") {
+			t.Errorf("state %q: err = %v, want invalid params listing the known states", state, err)
+		}
+	}
+	for _, state := range []string{"failed", "active", "inactive", "activating", "not-found", "masked"} {
+		if _, err := run(t, map[string]any{"state": state}); err != nil {
+			t.Errorf("state %q: %v", state, err)
+		}
+	}
+}
+
+func TestParseUnitsSkipsLinesThatAreNotUnits(t *testing.T) {
+	got := parseUnits("3 loaded units listed.\nLOAD = Reflects whether the\na.service loaded failed failed A\n")
+	if len(got) != 1 || got[0].Name != "a.service" {
+		t.Errorf("units = %+v", got)
 	}
 }

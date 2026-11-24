@@ -15,7 +15,7 @@ const paramsSchema = `{
   "oneOf": [{"required": ["unit"]}, {"required": ["state"]}],
   "properties": {
     "unit": {"type": "string", "minLength": 1, "description": "unit name, e.g. nginx.service or backup.timer; no patterns"},
-    "state": {"type": "string", "pattern": "^[a-z][a-z-]*$", "description": "instead of unit: list the units in this state, e.g. failed"},
+    "state": {"enum": ["failed", "active", "inactive", "activating", "deactivating", "reloading", "maintenance", "refreshing", "loaded", "not-found", "bad-setting", "error", "masked"], "description": "instead of unit: list the units in this load or active state, e.g. failed"},
     "exclude": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "with state: shell patterns of unit names to leave out"},
     "user": {"type": "boolean", "description": "check a unit of the user's service manager (systemctl --user)"},
     "properties": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "extra systemctl show properties returned in the properties field"}

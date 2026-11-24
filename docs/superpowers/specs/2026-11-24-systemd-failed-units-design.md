@@ -39,10 +39,14 @@ host, and its failure says which units are failed.
 
 ## Design (builder's calls)
 
-- **Params.** Exactly one of `unit` and `state`. `state` is any systemd
-  state name (`failed`, `active`, `inactive`, `activating`, ...; lower-case
-  letters and `-`), passed to `systemctl list-units --state=`; the docs
-  describe `failed`. `exclude` only with `state`, `properties` only with
+- **Params.** Exactly one of `unit` and `state`. `state` is one of
+  the load and active states of systemd (`failed`, `active`, `inactive`,
+  `activating`, `deactivating`, `reloading`, `maintenance`, `refreshing`,
+  `loaded`, `not-found`, `bad-setting`, `error`, `masked`), passed to
+  `systemctl list-units --state=`. Any other name is an error (changed after
+  the review: systemctl answers an unknown state with an empty list, so a
+  misspelt `faild` passed forever). Sub states (`running`, `dead`) are not
+  accepted. `exclude` only with `state`, `properties` only with
   `unit`; the wrong combination is an "invalid params" error.
 - **Command.** `systemctl [--user] list-units --all --plain --no-legend
   --no-pager --state=<state>`; five columns: unit, load, active, sub,

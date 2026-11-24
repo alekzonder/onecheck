@@ -255,7 +255,9 @@ is. Use `${VAR}`, see
 `body: expected contains "ok", got "<the first 1024 bytes of the body>"`. A
 condition on a response body or on a command's output therefore puts a piece
 of that body or output into the event. `result.output` holds its tail as
-well, see [Output and results](/output-and-results#saved-output).
+well, see [Output and results](/output-and-results#saved-output). A
+notification shows saved output only for the fields a rule names in
+[`event_output`](#output-in-notifications).
 
 To keep a rule's details out of notifications, set `event_params: false`:
 

@@ -187,3 +187,21 @@ func TestDescribeTypesElementSizes(t *testing.T) {
 		t.Error("count must be a number")
 	}
 }
+
+func TestListOrderIsStableForEqualMountPoints(t *testing.T) {
+	ms := []mount{{"/dev/sdb1", "/data", "ext4"}, {"/dev/sda1", "/data", "ext4"}, {"/dev/sdc1", "/data", "ext4"}}
+	for range 50 {
+		var asked []string
+		f, err := listFilesystems(ms, fakeStat(&asked), params{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var devs []string
+		for _, fs := range f["filesystems"].([]map[string]any) {
+			devs = append(devs, fs["device"].(string))
+		}
+		if !reflect.DeepEqual(devs, []string{"/dev/sda1", "/dev/sdb1", "/dev/sdc1"}) {
+			t.Fatalf("devices = %v", devs)
+		}
+	}
+}
