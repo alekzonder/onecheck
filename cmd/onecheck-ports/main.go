@@ -14,7 +14,7 @@ const paramsSchema = `{
   "additionalProperties": false,
   "properties": {
     "proto": {"enum": ["tcp", "udp"], "description": "only this protocol; both when omitted"},
-    "interface": {"type": "string", "minLength": 1, "description": "only sockets reachable on this interface, e.g. eth0; every interface except loopback when omitted"}
+    "interface": {"type": "string", "minLength": 1, "description": "only sockets bound to an address of this interface (e.g. eth0) or to all addresses; everything but loopback when omitted"}
   }
 }`
 

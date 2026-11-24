@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const hdr = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+
 const tcp4 = `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
    0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 101 1 0000000000000000 100 0 0 10 0
    1: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 102 1 0000000000000000 100 0 0 10 0
@@ -67,11 +69,11 @@ func TestParseUDPSkipsConnected(t *testing.T) {
 
 func TestParseMalformedLineIsError(t *testing.T) {
 	for name, body := range map[string]string{
-		"short line":  "header\n   0: 0100007F:1F90 00000000:0000 0A\n",
-		"bad address": "header\n   0: ZZ00007F:1F90 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
-		"bad port":    "header\n   0: 0100007F:XX 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
-		"no colon":    "header\n   0: 0100007F 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
-		"v6 in v4":    "header\n   0: 00000000000000000000000000000000:0016 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
+		"short line":  hdr + "   0: 0100007F:1F90 00000000:0000 0A\n",
+		"bad address": hdr + "   0: ZZ00007F:1F90 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
+		"bad port":    hdr + "   0: 0100007F:XX 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
+		"no colon":    hdr + "   0: 0100007F 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
+		"v6 in v4":    hdr + "   0: 00000000000000000000000000000000:0016 00000000:0000 0A 0:0 00:0 0 0 0 1\n",
 	} {
 		if _, err := parseSockets(strings.NewReader(body), "tcp", false); err == nil || !strings.Contains(err.Error(), "line 2") {
 			t.Errorf("%s: want an error naming line 2, got %v", name, err)
@@ -80,9 +82,17 @@ func TestParseMalformedLineIsError(t *testing.T) {
 }
 
 func TestParseEmptyTable(t *testing.T) {
-	got, err := parseSockets(strings.NewReader("header only\n"), "tcp", false)
+	got, err := parseSockets(strings.NewReader(hdr), "tcp", false)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+func TestParseWithoutHeaderIsError(t *testing.T) {
+	for name, body := range map[string]string{"empty file": "", "not a table": "Permission denied\n"} {
+		if _, err := parseSockets(strings.NewReader(body), "tcp", false); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
 	}
 }
 

@@ -30,9 +30,14 @@ const tcpListen = "0A"
 func parseSockets(r io.Reader, proto string, v6 bool) ([]socket, error) {
 	var out []socket
 	sc := bufio.NewScanner(r)
+	seenHeader := false
 	for line := 1; sc.Scan(); line++ {
 		if line == 1 {
-			continue // header
+			if !strings.Contains(sc.Text(), "local_address") {
+				return nil, fmt.Errorf("line 1: not a socket table: %.60q", sc.Text())
+			}
+			seenHeader = true
+			continue
 		}
 		f := strings.Fields(sc.Text())
 		if len(f) == 0 {
@@ -61,7 +66,13 @@ func parseSockets(r io.Reader, proto string, v6 bool) ([]socket, error) {
 		}
 		out = append(out, socket{proto: proto, addr: local, port: port, inode: inode})
 	}
-	return out, sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if !seenHeader {
+		return nil, fmt.Errorf("empty socket table")
+	}
+	return out, nil
 }
 
 // parseEndpoint decodes "0100007F:1F90". The kernel prints the address as

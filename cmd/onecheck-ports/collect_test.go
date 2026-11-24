@@ -41,7 +41,7 @@ func fakeProc(t *testing.T, files map[string]string) string {
 }
 
 func allTables() map[string]string {
-	return map[string]string{"net/tcp": tcp4, "net/tcp6": tcp6, "net/udp": udp4, "net/udp6": "header\n"}
+	return map[string]string{"net/tcp": tcp4, "net/tcp6": tcp6, "net/udp": udp4, "net/udp6": hdr}
 }
 
 // addProcess gives pid a comm and fds pointing at socket inodes.
@@ -148,6 +148,29 @@ func TestCollectInterfaceLoopback(t *testing.T) {
 	)
 }
 
+func TestCollectWholeLoopbackNetwork(t *testing.T) {
+	tables := allTables()
+	// 127.0.0.53:53, where systemd-resolved listens
+	tables["net/tcp"] = hdr + "   0: 3500007F:0035 00000000:0000 0A 0:0 00:0 0 0 0 5\n"
+	tables["net/tcp6"] = hdr
+	fakeProc(t, tables)
+	out, err := run(t, `{"interface":"lo","proto":"tcp"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertKeys(t, out, "tcp 127.0.0.53:53@lo")
+	out, err = run(t, `{"proto":"tcp"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertKeys(t, out)
+	out, err = run(t, `{"interface":"eth0","proto":"tcp"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertKeys(t, out)
+}
+
 func TestCollectProtoUDP(t *testing.T) {
 	fakeProc(t, allTables())
 	out, err := run(t, `{"proto":"udp"}`)
@@ -178,13 +201,16 @@ func TestCollectMergesReusePortSockets(t *testing.T) {
 	if n != 1 {
 		t.Errorf("port 443 listed %d times", n)
 	}
+	if got := len(out["listening"].([]map[string]any)); out["count"] != int64(got) {
+		t.Errorf("count = %v, but listening has %d elements", out["count"], got)
+	}
 }
 
 func TestCollectAddressWithoutInterface(t *testing.T) {
 	tables := allTables()
-	tables["net/tcp"] = "header\n   0: 0A00000A:0050 00000000:0000 0A 0:0 00:0 0 0 0 5\n" // 10.0.0.10
-	tables["net/tcp6"] = "header\n"
-	tables["net/udp"] = "header\n"
+	tables["net/tcp"] = hdr + "   0: 0A00000A:0050 00000000:0000 0A 0:0 00:0 0 0 0 5\n" // 10.0.0.10
+	tables["net/tcp6"] = hdr
+	tables["net/udp"] = hdr
 	fakeProc(t, tables)
 	out, err := run(t, `{}`)
 	if err != nil {
@@ -194,11 +220,7 @@ func TestCollectAddressWithoutInterface(t *testing.T) {
 }
 
 func TestCollectCountOnlySkipsProcesses(t *testing.T) {
-	root := fakeProc(t, allTables())
-	// A pid directory that would fail the test if it were read as a process.
-	if err := os.MkdirAll(filepath.Join(root, "700"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	fakeProc(t, allTables())
 	scanned := false
 	old := processNames
 	processNames = func(string, map[uint64]bool) map[uint64]string { scanned = true; return nil }
@@ -246,7 +268,7 @@ func TestCollectWithoutIPv6(t *testing.T) {
 
 func TestCollectMalformedTableIsError(t *testing.T) {
 	tables := allTables()
-	tables["net/tcp6"] = "header\n garbage\n"
+	tables["net/tcp6"] = hdr + " garbage\n"
 	fakeProc(t, tables)
 	_, err := run(t, `{}`)
 	if err == nil || !strings.Contains(err.Error(), "net/tcp6") || !strings.Contains(err.Error(), "line 2") {

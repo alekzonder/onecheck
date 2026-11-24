@@ -49,8 +49,9 @@ Params: `proto` (`tcp` | `udp`), `interface` (name).
 - Without `interface`: every socket except those bound to a loopback
   address (`127.0.0.0/8`, `::1`).
 - With `interface`: sockets bound to an address of that interface, plus
-  sockets bound to all addresses (`0.0.0.0`, `::`). `interface: lo` gives
-  what is reachable on loopback.
+  sockets bound to all addresses (`0.0.0.0`, `::`). A loopback interface
+  has the whole loopback network (`127.0.0.0/8`), so `interface: lo` gives
+  everything that listens locally.
 
 Element keys, always all present:
 

@@ -18,15 +18,22 @@ that match the params, and their number. Params only narrow the list.
 | Key | Required | Description |
 |---|---|---|
 | `proto` | no | `tcp` or `udp`; both when omitted |
-| `interface` | no | only sockets reachable on this interface, e.g. `eth0` |
+| `interface` | no | only sockets bound to an address of this interface, e.g. `eth0`, or to all addresses |
 
 Without `interface` the list has every socket except those bound to a
 loopback address (`127.0.0.0/8`, `::1`): what other machines could reach.
 
 With `interface` the list has the sockets bound to an address of that
 interface and the sockets bound to all addresses (`0.0.0.0`, `::`), which
-answer on every interface. `interface: lo` lists what is reachable locally.
-An interface that does not exist is an error.
+answer on every interface. `interface: lo` lists what listens locally: the
+whole `127.0.0.0/8` network and `::1`. An interface that does not exist is
+an error.
+
+`interface` selects by the address a socket is bound to. It is not a
+guarantee about packets: Linux answers on one interface for an address of
+another unless the firewall or `rp_filter` forbids it. Sockets bound to a
+broadcast or multicast address, or to an address no interface has, are
+listed only without `interface`.
 
 ## Fields
 
@@ -49,12 +56,17 @@ Each element of `listening` has all of these keys:
 TCP sockets are those in the LISTEN state. UDP has no such state: the list
 has the UDP sockets without a remote address, the ones `ss -uln` shows.
 
-A service listening on IPv4 and IPv6 gives two elements (`0.0.0.0` and
-`::`). Several sockets on the same proto, address and port (worker
-processes) are one element.
+A service that opens an IPv4 and an IPv6 socket gives two elements
+(`0.0.0.0` and `::`). Many programs open only the `::` socket and serve
+IPv4 through it: that is one element with `family: ipv6`, so do not use
+`family` to tell whether a port answers on IPv4. Several sockets on the same proto, address and port (worker
+processes) are one element and count once.
 
 `process` is filled for the processes onecheck may inspect: all of them as
-root, only its own user's otherwise. A rule that only checks `count` does
+root, only its own user's otherwise. When several processes hold the
+socket, the one with the lowest pid is named: for a socket-activated
+service (`ssh.socket`, `docker.socket`) that is `systemd`. An address that
+two interfaces have is shown with the first interface by name. A rule that only checks `count` does
 not look processes up.
 
 ## Recipes

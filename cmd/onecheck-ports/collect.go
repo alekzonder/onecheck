@@ -67,12 +67,12 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	sockets = selectSockets(sockets, p.Interface, ifaces)
-	out := map[string]any{"count": int64(len(sockets))}
+	groups := merge(selectSockets(sockets, p.Interface, ifaces))
+	out := map[string]any{"count": int64(len(groups))}
 	if !req.WantsOr("listening", true) {
 		return out, nil
 	}
-	out["listening"] = elements(sockets, ifaces)
+	out["listening"] = elements(groups, ifaces)
 	return out, nil
 }
 
@@ -109,7 +109,7 @@ func selectSockets(all []socket, iface string, ifaces map[string][]netip.Addr) [
 		case s.addr.IsUnspecified():
 		case iface == "" && s.addr.IsLoopback():
 			continue
-		case iface != "" && !slices.Contains(ifaces[iface], s.addr):
+		case iface != "" && !owns(ifaces[iface], s.addr):
 			continue
 		}
 		kept = append(kept, s)
@@ -120,29 +120,54 @@ func selectSockets(all []socket, iface string, ifaces map[string][]netip.Addr) [
 	return kept
 }
 
-// elements builds the list; sockets sharing proto, address and port
-// (SO_REUSEPORT) become one element.
-func elements(sockets []socket, ifaces map[string][]netip.Addr) []map[string]any {
+// owns reports whether an interface with these addresses has addr. A
+// loopback interface has the whole loopback network (127.0.0.0/8), not only
+// the address assigned to it.
+func owns(addrs []netip.Addr, addr netip.Addr) bool {
+	if slices.Contains(addrs, addr) {
+		return true
+	}
+	return addr.IsLoopback() && slices.ContainsFunc(addrs, netip.Addr.IsLoopback)
+}
+
+// merge groups sorted sockets that share proto, address and port
+// (SO_REUSEPORT, worker processes): each group is one listening port.
+func merge(sorted []socket) [][]socket {
+	var groups [][]socket
+	for _, s := range sorted {
+		if n := len(groups); n > 0 {
+			if p := groups[n-1][0]; p.proto == s.proto && p.port == s.port && p.addr == s.addr {
+				groups[n-1] = append(groups[n-1], s)
+				continue
+			}
+		}
+		groups = append(groups, []socket{s})
+	}
+	return groups
+}
+
+// elements builds the list, one element per group.
+func elements(groups [][]socket, ifaces map[string][]netip.Addr) []map[string]any {
 	inodes := map[uint64]bool{}
-	for _, s := range sockets {
-		if s.inode != 0 { // kernel sockets have no inode
-			inodes[s.inode] = true
+	for _, g := range groups {
+		for _, s := range g {
+			if s.inode != 0 { // kernel sockets have no inode
+				inodes[s.inode] = true
+			}
 		}
 	}
 	names := map[uint64]string{}
 	if len(inodes) > 0 {
 		names = processNames(procRoot, inodes)
 	}
-	out := make([]map[string]any, 0, len(sockets))
-	var prev socket
-	for i, s := range sockets {
-		if i > 0 && s.proto == prev.proto && s.port == prev.port && s.addr == prev.addr {
-			if last := out[len(out)-1]; last["process"] == "" {
-				last["process"] = names[s.inode]
+	out := make([]map[string]any, 0, len(groups))
+	for _, g := range groups {
+		s, process := g[0], ""
+		for _, member := range g {
+			if process = names[member.inode]; process != "" {
+				break
 			}
-			continue
 		}
-		prev = s
 		family := "ipv4"
 		if s.addr.Is6() {
 			family = "ipv6"
@@ -153,7 +178,7 @@ func elements(sockets []socket, ifaces map[string][]netip.Addr) []map[string]any
 			"address":   s.addr.String(),
 			"family":    family,
 			"interface": interfaceOf(s.addr, ifaces),
-			"process":   names[s.inode],
+			"process":   process,
 		})
 	}
 	return out
@@ -164,7 +189,7 @@ func interfaceOf(addr netip.Addr, ifaces map[string][]netip.Addr) string {
 		return "any"
 	}
 	for _, name := range slices.Sorted(maps.Keys(ifaces)) {
-		if slices.Contains(ifaces[name], addr) {
+		if owns(ifaces[name], addr) {
 			return name
 		}
 	}
