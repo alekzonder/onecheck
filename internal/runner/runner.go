@@ -225,7 +225,7 @@ func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.R
 	if prev != nil {
 		from = prev.State
 	}
-	next, transition := state.Advance(prev, res.OK(), res.FailAfter, res.PassAfter, now)
+	next, transition := state.Advance(prev, res.OK(), res.FailAfter, res.PassAfter, rule.RemindEvery, now)
 	res.State = next.State
 	res.Consecutive = next.Consecutive(res.OK())
 	if transition != "" {
