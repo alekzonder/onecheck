@@ -118,7 +118,7 @@ Each rule has three parts:
 - `check` — conditions on the values the module returns.
 
 See [examples/config.yaml](../examples/config.yaml) for a fuller example,
-[configuration.md](configuration.md) for every key and [checks.md](checks.md)
+[Configuration](/configuration) for every key and [Checks](/checks)
 for everything `check` can express.
 
 ## Validate and run
@@ -133,7 +133,7 @@ onecheck --rule site-up    # run one rule
 ```
 
 The exit code is `0` when every rule passed, `1` when something failed, `2`
-when onecheck could not run at all. Details: [output-and-results.md](output-and-results.md).
+when onecheck could not run at all. Details: [Output and results](/output-and-results).
 
 ## Schedule it
 
@@ -200,4 +200,4 @@ With the default paths, for root:
 
 For other users everything lives under `$HOME/.local/state/onecheck/` and
 `$HOME/.local/lib/onecheck/modules/`. All of it is configurable:
-[configuration.md](configuration.md).
+[Configuration](/configuration).

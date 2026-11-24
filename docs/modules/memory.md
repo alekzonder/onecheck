@@ -1,4 +1,8 @@
-# Module `memory`
+---
+title: memory module
+sidebar:
+  label: memory
+---
 
 Reports physical memory and swap usage of the host, so memory running out
 is noticed before the system starts swapping heavily or killing processes.
@@ -40,7 +44,7 @@ grows and shrinks, and a high `swap_used_percent` there is less alarming
 than on Linux.
 
 **bytes** fields accept unit literals in conditions:
-`available: { gt: 1GB }`. See [checks.md](../checks.md#gt-gte-lt-lte).
+`available: { gt: 1GB }`. See [Checks](/checks#gt-gte-lt-lte).
 
 Inside a container the module reports the host's memory, not the
 container's limit.

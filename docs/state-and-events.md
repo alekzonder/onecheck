@@ -137,7 +137,7 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
 | `from`, `to` | confirmed state before and after |
 | `at` | when the change was recorded (UTC, RFC 3339) |
 | `expires_at` | `at` + `events.ttl`; after this the event may be deleted |
-| `result` | the full result of the run that caused the change, see [output-and-results.md](output-and-results.md#result-format) |
+| `result` | the full result of the run that caused the change, see [Output and results](/output-and-results#result-format) |
 
 For a `recovered` event, `result` is the passing run (`failures` is empty).
 For a `fail` event caused by a check that could not run, `result.status` is
@@ -161,7 +161,7 @@ deleting, it will see the event again. Use `id` to deduplicate.
 
 Events nobody consumed are removed by `onecheck logrotate` once `expires_at`
 has passed (`events.ttl`, default `24h`). See
-[logging-and-logrotate.md](logging-and-logrotate.md).
+[Logging and logrotate](/logging-and-logrotate).
 
 ### No lost transitions
 

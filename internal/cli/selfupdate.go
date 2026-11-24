@@ -84,5 +84,5 @@ func checkSelfUpdatable(exe string) error {
 		return nil
 	}
 	return fmt.Errorf("%s was installed by install.sh, which keeps each version in its own directory; "+
-		"run install.sh again to install another version and switch to it (see docs/getting-started.md)", exe)
+		"run install.sh again to install another version and switch to it (see https://alekzonder.github.io/onecheck/getting-started)", exe)
 }

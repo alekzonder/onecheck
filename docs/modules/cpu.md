@@ -1,4 +1,8 @@
-# Module `cpu`
+---
+title: cpu module
+sidebar:
+  label: cpu
+---
 
 Reports how busy the host's CPUs are, the load average and the number of
 cores, so a host that is overloaded for a long time is noticed before its
@@ -18,7 +22,7 @@ The window must be shorter than the rule's `timeout` (default 30s);
 otherwise the rule is an `error` at once, without waiting, telling you to
 shorten the window or raise `timeout`. A longer window smooths short bursts;
 for sustained load combine a short window with `fail_after` (see
-[state-and-events.md](../state-and-events.md#thresholds-fail_after-pass_after)).
+[State and events](/state-and-events#thresholds-fail_after-pass_after)).
 
 The module waits only when a `*_percent` field is checked. A rule that
 checks only load average answers immediately.

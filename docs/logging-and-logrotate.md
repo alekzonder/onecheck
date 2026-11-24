@@ -119,7 +119,7 @@ events:
 An event is written with `expires_at` = time of the event + `events.ttl`.
 `onecheck logrotate` removes events whose `expires_at` has passed. This only
 matters for events nobody consumed: a notification service normally deletes
-events as it processes them (see [state-and-events.md](state-and-events.md)).
+events as it processes them (see [State and events](/state-and-events)).
 
 The event queue is shared by all configs, so the cleanup of any one config
 covers all of them. Each event keeps the lifetime it was written with.

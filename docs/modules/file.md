@@ -1,4 +1,8 @@
-# Module `file`
+---
+title: file module
+sidebar:
+  label: file
+---
 
 Inspects one path: a file, a directory or a symlink.
 
@@ -26,7 +30,7 @@ Glob patterns are not supported: one rule looks at one path.
 | `target` | string | where a symlink points, exactly as stored in the link |
 
 **bytes** and **duration** fields accept unit literals in conditions:
-`size: { lt: 10MB }`, `age: { lt: 1h }`. See [checks.md](../checks.md#gt-gte-lt-lte).
+`size: { lt: 10MB }`, `age: { lt: 1h }`. See [Checks](/checks#gt-gte-lt-lte).
 
 Which fields are present:
 

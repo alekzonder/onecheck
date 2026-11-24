@@ -1,4 +1,8 @@
-# Module `http`
+---
+title: http module
+sidebar:
+  label: http
+---
 
 Makes one HTTP or HTTPS request.
 
@@ -17,7 +21,7 @@ The request is limited by the rule's `timeout`. Proxy settings are taken from
 the usual `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` environment variables.
 
 Secrets can be passed through the environment, see
-[configuration.md](../configuration.md#environment-variables-in-params):
+[Configuration](/configuration#environment-variables-in-params):
 
 ```yaml
 headers:
@@ -52,7 +56,7 @@ The tail of `body` (the last `10k` by default) and the `headers` are saved in
 the rule's result on every run, also when no condition mentions them, so a
 failed `status: 200` can be investigated afterwards. Change the size with
 `output_tail`, or set `output_tail: 0` for responses that hold secrets, see
-[output-and-results.md](../output-and-results.md#saved-output).
+[Output and results](/output-and-results#saved-output).
 
 `tls_expires_in` is absent for plain `http://` URLs, so a condition on it
 fails there.

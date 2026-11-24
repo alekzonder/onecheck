@@ -1,4 +1,8 @@
-# Module `docker`
+---
+title: docker module
+sidebar:
+  label: docker
+---
 
 Reports Docker containers, so you know that the containers which must serve
 are running and healthy, that nothing restarts in a loop or dies of running
@@ -21,7 +25,7 @@ Without `name` and `label` every container is listed, running or not (like
 `docker ps -a`). With both, a container must match both. A filter that
 matches nothing gives `count: 0`, not an error.
 
-Patterns use the [`glob` syntax](../checks.md#glob-not_glob): `*`, `?`,
+Patterns use the [`glob` syntax](/checks#glob-not_glob): `*`, `?`,
 `[abc]`, `[!abc]`.
 
 ### Where Docker is
@@ -79,7 +83,7 @@ Each element of `containers` has all of these keys:
 | `labels` | object | container labels |
 
 Element keys are checked with paths (`containers.0.state`) or with
-[`every` / `some` and `path`](../checks.md#every-some). Unit literals do not
+[`every` / `some` and `path`](/checks#every-some). Unit literals do not
 work inside elements: write `uptime_seconds: { gt: 3600 }`, not `1h`.
 
 A rule that only checks `count` makes one request to Docker. A rule that

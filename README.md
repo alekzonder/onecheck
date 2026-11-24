@@ -61,18 +61,20 @@ echo '17 3 * * * root  onecheck logrotate >/dev/null'    >> /etc/cron.d/onecheck
 
 ## Documentation
 
+The documentation is published at <https://alekzonder.github.io/onecheck>.
+
 | | |
 |---|---|
-| [Getting started](docs/getting-started.md) | install, first config, cron and systemd |
-| [Configuration](docs/configuration.md) | every config key, includes, defaults |
-| [Checks](docs/checks.md) | the `check` block: paths, all operators, JSON and JSON Schema |
-| Modules | [file](docs/modules/file.md), [http](docs/modules/http.md), [command](docs/modules/command.md), [disk](docs/modules/disk.md), [systemd](docs/modules/systemd.md), [cpu](docs/modules/cpu.md), [memory](docs/modules/memory.md), [docker](docs/modules/docker.md), [ports](docs/modules/ports.md) |
-| [State and events](docs/state-and-events.md) | `fail_after` / `pass_after`, the event queue contract |
-| [Output and results](docs/output-and-results.md) | exit codes, text and JSON output, result files |
-| [Module management](docs/module-management.md) | search, install, update, remove, self-update |
-| [Logging and logrotate](docs/logging-and-logrotate.md) | log files, levels, rotation, event cleanup |
-| [Module protocol](docs/module-protocol.md) | write your own module, in any language |
-| [Development](docs/development.md) | build, test, release |
+| [Getting started](https://alekzonder.github.io/onecheck/getting-started) | install, first config, cron and systemd |
+| [Configuration](https://alekzonder.github.io/onecheck/configuration) | every config key, includes, defaults |
+| [Checks](https://alekzonder.github.io/onecheck/checks) | the `check` block: paths, all operators, JSON and JSON Schema |
+| Modules | [file](https://alekzonder.github.io/onecheck/modules/file), [http](https://alekzonder.github.io/onecheck/modules/http), [command](https://alekzonder.github.io/onecheck/modules/command), [disk](https://alekzonder.github.io/onecheck/modules/disk), [systemd](https://alekzonder.github.io/onecheck/modules/systemd), [cpu](https://alekzonder.github.io/onecheck/modules/cpu), [memory](https://alekzonder.github.io/onecheck/modules/memory), [docker](https://alekzonder.github.io/onecheck/modules/docker), [ports](https://alekzonder.github.io/onecheck/modules/ports) |
+| [State and events](https://alekzonder.github.io/onecheck/state-and-events) | `fail_after` / `pass_after`, the event queue contract |
+| [Output and results](https://alekzonder.github.io/onecheck/output-and-results) | exit codes, text and JSON output, result files |
+| [Module management](https://alekzonder.github.io/onecheck/module-management) | search, install, update, remove, self-update |
+| [Logging and logrotate](https://alekzonder.github.io/onecheck/logging-and-logrotate) | log files, levels, rotation, event cleanup |
+| [Module protocol](https://alekzonder.github.io/onecheck/module-protocol) | write your own module, in any language |
+| [Development](https://alekzonder.github.io/onecheck/development) | build, test, release |
 
 `onecheck --help` and `onecheck <command> --help` describe every command and flag.
 

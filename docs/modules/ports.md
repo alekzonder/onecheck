@@ -1,4 +1,8 @@
-# Module `ports`
+---
+title: ports module
+sidebar:
+  label: ports
+---
 
 Reports the TCP and UDP ports the host listens on, so you know that nothing
 unexpected is exposed and that every port which must serve is open.

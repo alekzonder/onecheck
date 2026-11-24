@@ -1,7 +1,7 @@
 # Development
 
 Rules for contributors (commit messages, merges, limits) are in
-[AGENTS.md](../AGENTS.md). This page is about how to build, test and release.
+[AGENTS.md](https://github.com/alekzonder/onecheck/blob/main/AGENTS.md). This page is about how to build, test and release.
 
 ## Requirements
 
@@ -9,6 +9,7 @@ Rules for contributors (commit messages, merges, limits) are in
 - `make`
 - network access the first time `make lint` runs: it installs a pinned
   `golangci-lint` into `./bin`
+- for the documentation site only: Node.js 22 and npm
 
 ## Make targets
 
@@ -20,6 +21,8 @@ Rules for contributors (commit messages, merges, limits) are in
 | `make lint` | `golangci-lint`, including cyclomatic complexity |
 | `make check` | `fmt-check` + `go vet` + `lint` + `test`; **must pass before a change is done** |
 | `make release-assets` | cross-builds release assets and `checksums.txt` into `dist/release/` |
+| `make docs-build` | checks documentation links and builds the site into `docs/dist/` |
+| `make docs` | builds the site and publishes it to branch `docs` |
 | `make clean` | removes `dist/` |
 
 Builds are static (`CGO_ENABLED=0`). The version is injected with
@@ -57,7 +60,8 @@ internal/install/          module install/update/remove, self-update
 internal/cli/              cobra commands
 internal/testmods/         builds bundled modules for tests
 examples/                  example config, validated by a test
-docs/                      user documentation
+docs/                      user documentation, built into the site by Blume
+scripts/                   documentation link check and publishing
 ```
 
 How a run flows through the packages:
@@ -127,7 +131,9 @@ go test ./internal/runner -run TestRunTransitionWritesEvent -v
 1. Create `cmd/onecheck-<name>/` with `main.go` (description, params schema,
    fields) and `collect.go`, following the existing modules.
 2. Test `collect` directly; include `TestDescriptionCoversFields`.
-3. Add `docs/modules/<name>.md` and link it from `README.md`.
+3. Add `docs/modules/<name>.md` (with `title` and `sidebar.label`
+   frontmatter like the other module pages), list it in
+   `docs/modules/meta.ts` and link it from `README.md` and `docs/index.md`.
 
 ## Releasing
 
@@ -159,6 +165,10 @@ checksums.txt
 for linux and darwin on amd64 and arm64. These names are what
 `onecheck module install` and `onecheck self-update` look for.
 
+After the release is published, the workflow's `docs` job runs `make docs`,
+which publishes the documentation of the tagged commit (see
+[Documentation site](#documentation-site)).
+
 Environment overrides useful when testing update flows against a fork:
 
 | Variable | Effect |
@@ -166,3 +176,37 @@ Environment overrides useful when testing update flows against a fork:
 | `ONECHECK_GITHUB_API` | API base URL instead of `https://api.github.com` |
 | `ONECHECK_SELF_UPDATE_REPO` | repository `self-update` downloads from |
 | `ONECHECK_SELF_UPDATE_TARGET` | path of the binary `self-update` replaces |
+
+## Documentation site
+
+The pages under `docs/` are published at <https://alekzonder.github.io/onecheck>
+by [Blume](https://useblume.dev). `docs/` is the Blume project and its own
+content root:
+
+| Path | What it is |
+|---|---|
+| `docs/blume.config.ts` | site settings: base `/onecheck`, excluded folders |
+| `docs/package.json`, `docs/package-lock.json` | the pinned Blume version |
+| `docs/index.md` | the home page |
+| `docs/meta.ts`, `docs/modules/meta.ts` | sidebar order |
+| `docs/public/` | static files served at the site root |
+
+Every `.md` page under `docs/` is published, except `docs/superpowers/`
+(internal designs and plans) and build folders. To keep a new folder off the
+site, add it to `content.exclude` in `docs/blume.config.ts`.
+
+**Links between pages use site routes, never `.md` paths:**
+`[Checks](/checks#gt-gte-lt-lte)`, `[disk](/modules/disk)`. Blume prefixes
+the base `/onecheck` itself; it does not rewrite relative `.md` links, so they
+would break on the site. `scripts/docs-check-links.sh` fails the build when one
+appears. Links from outside the site (README, CLI messages) use the full URL
+`https://alekzonder.github.io/onecheck/<route>`.
+
+Preview locally with `cd docs && npm ci && npm run dev`.
+`make docs-build` runs the link check, `blume doctor` and `blume build`; CI
+runs it on every push and pull request (`.github/workflows/check.yml`).
+
+`make docs` (`scripts/publish-docs.sh`) builds the site and commits
+`docs/dist` to branch `docs`, creating it on first use. GitHub Pages serves
+branch `docs`, path `/`. The release workflow runs it for every tag, so the
+site always shows the latest release.

@@ -124,8 +124,8 @@ binary    /usr/local/lib/onecheck/versions/0.1.2/onecheck
 | `config` | the config file and how it was found: `--config`, `ONECHECK_CONFIG` or `default location` |
 | `name` | the config's `name`; it is part of the log, state and results paths |
 | `include` | every include file that was read, in reading order |
-| `log` | the log file, see [logging-and-logrotate.md](logging-and-logrotate.md) |
-| `state` | the confirmed state of each rule, see [state-and-events.md](state-and-events.md#files) |
+| `log` | the log file, see [Logging and logrotate](/logging-and-logrotate) |
+| `state` | the confirmed state of each rule, see [State and events](/state-and-events#files) |
 | `results` | the latest result of each rule |
 | `events` | the event queue, shared by all configs on the host |
 | `modules` | where modules are looked for |

@@ -104,7 +104,7 @@ access to the directory of the binary.
 
 A onecheck installed with `install.sh` lives in a per-version directory and
 is not updated by `self-update` (the command refuses): run `install.sh`
-again, see [getting-started.md](getting-started.md#with-the-install-script).
+again, see [Getting started](/getting-started#with-the-install-script).
 
 `self-update` does not touch modules, and `module update` does not touch
 onecheck. A typical sequence:
@@ -146,7 +146,7 @@ Any GitHub repository can distribute modules. A release needs:
   ```
 
 Module names are lower-case letters, digits, `_` and `-`. See
-[module-protocol.md](module-protocol.md) for how to write a module.
+[Module protocol](/module-protocol) for how to write a module.
 
 Add repositories you use to the config so that `module search` covers them:
 

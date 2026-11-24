@@ -7,7 +7,7 @@ A run reports its outcome in four places:
 | exit code | did everything pass | cron, systemd, scripts |
 | stdout | every rule, or only the failing ones; text or JSON | people, pipelines |
 | `<paths.results>/<name>/<rule>.json` | the latest result of each rule | dashboards, other tools |
-| `<paths.events>/` | changes of state | notifications, see [state-and-events.md](state-and-events.md) |
+| `<paths.events>/` | changes of state | notifications, see [State and events](/state-and-events) |
 
 ## Exit codes
 
@@ -198,7 +198,7 @@ it and whether the rule passed or failed**:
 | `file` | nothing |
 
 Which fields are saved is decided by the module (it marks them as output, see
-[module-protocol.md](module-protocol.md)); how much is kept is decided by the
+[Module protocol](/module-protocol)); how much is kept is decided by the
 config:
 
 ```yaml
@@ -232,7 +232,7 @@ rules:
   `max_field_size` bytes are seen at all.
 
 The result file is overwritten by the next run, so `output` always belongs to
-the latest run. An [event](state-and-events.md) embeds the result of the run
+the latest run. An [event](/state-and-events) embeds the result of the run
 that changed the state, including its `output`, so a notification can show
 why the check failed.
 

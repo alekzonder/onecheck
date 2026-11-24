@@ -1,4 +1,8 @@
-# Module `command`
+---
+title: command module
+sidebar:
+  label: command
+---
 
 Runs a command and returns its exit code and output.
 
@@ -43,7 +47,7 @@ The tail of `stdout` and `stderr` (the last `10k` of each by default) is saved
 in the rule's result on every run, also when no condition mentions them and
 when the command hit the timeout, so a failure can be investigated afterwards.
 Change the size with `output_tail`, see
-[output-and-results.md](../output-and-results.md#saved-output).
+[Output and results](/output-and-results#saved-output).
 
 `stdout` and `stderr` are each limited by `run.max_field_size` (default
 `10MB`).

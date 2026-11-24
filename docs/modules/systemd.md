@@ -1,4 +1,8 @@
-# Module `systemd`
+---
+title: systemd module
+sidebar:
+  label: systemd
+---
 
 Reports the state of one systemd unit, so you know that services which must
 serve are running and start on boot, that units which must stay off are
@@ -71,7 +75,7 @@ Raw:
 | `properties` | object | `{Name: value}` for each name in `params.properties`; integers (sizes, counts, ids) as numbers, everything else as text exactly as `systemctl show` prints it (`infinity`, `yes`, `[not set]`); a name systemd does not know is missing |
 
 **duration** fields accept unit literals in conditions:
-`idle_age: { lt: 25h }`. See [checks.md](../checks.md#gt-gte-lt-lte).
+`idle_age: { lt: 25h }`. See [Checks](/checks#gt-gte-lt-lte).
 
 ### Which field to use
 

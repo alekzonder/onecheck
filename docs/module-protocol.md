@@ -74,7 +74,7 @@ A field with `"output": true` is diagnostic output, like a command's stdout
 or a response body. onecheck asks for such fields on every check (they are
 added to `fields` of the request) and saves their tail in the result even if
 no condition uses them, see
-[output-and-results.md](output-and-results.md#saved-output). Mark only what
+[Output and results](/output-and-results#saved-output). Mark only what
 helps to understand a failure and is not expensive to collect.
 
 Declaring fields lets `onecheck validate` reject a condition on a field that
@@ -289,7 +289,7 @@ onecheck --rule no-recent-reboot --log-level debug
 
 Publish a GitHub release with assets named `onecheck-<name>_<os>_<arch>` and
 a `checksums.txt`; then anyone can `onecheck module install <owner/repo>`.
-Details: [module-management.md](module-management.md#repositories-of-third-party-modules).
+Details: [Module management](/module-management#repositories-of-third-party-modules).
 
 ## Protocol versions
 

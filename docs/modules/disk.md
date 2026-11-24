@@ -1,4 +1,8 @@
-# Module `disk`
+---
+title: disk module
+sidebar:
+  label: disk
+---
 
 Reports free space and inodes of one filesystem, so a disk that is filling up
 is noticed before services on it start to fail. Running out of inodes (many
@@ -47,7 +51,7 @@ Blocks reserved for root (5 % on ext4 by default) count as unavailable, as in
 even though root still can.
 
 **bytes** fields accept unit literals in conditions: `free: { gt: 5GB }`.
-See [checks.md](../checks.md#gt-gte-lt-lte).
+See [Checks](/checks#gt-gte-lt-lte).
 
 Which fields are present:
 
