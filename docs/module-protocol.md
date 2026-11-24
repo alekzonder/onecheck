@@ -60,7 +60,7 @@ free of side effects: onecheck calls it on every run and on install.
 | `version` | yes | module version (semver) |
 | `description` | no | one line, shown by `onecheck module list` |
 | `params_schema` | no | JSON Schema (draft 2020-12) for the rule's `params`; onecheck validates `params` with it before starting a check |
-| `fields` | yes | every field the module can return: name → `type`, `description`, and optionally `"output": true` |
+| `fields` | yes | every field the module can return: name → `type`, `description`, and optionally `"output": true` and `elements` |
 
 Field types:
 
@@ -69,6 +69,22 @@ Field types:
 | `string`, `number`, `bool`, `object`, `array` | the JSON type | |
 | `bytes` | number of bytes | conditions may use `10MB` etc. |
 | `duration` | number of seconds, may be fractional | conditions may use `500ms`, `1h` etc. |
+
+An `array` field whose elements are objects may give the types of the keys
+of an element in `elements`:
+
+```json
+"disks": {
+  "type": "array",
+  "description": "one object per disk: name, free, age",
+  "elements": { "free": "bytes", "age": "duration" }
+}
+```
+
+Conditions on those keys then accept unit literals, as on fields of these
+types: `disks: { every: { path: free, gt: 5GB } }`. List only the keys that
+need it; nested objects and arrays inside an element cannot be typed. A
+version of onecheck that does not know `elements` ignores it.
 
 A field with `"output": true` is diagnostic output, like a command's stdout
 or a response body. onecheck asks for such fields on every check (they are
