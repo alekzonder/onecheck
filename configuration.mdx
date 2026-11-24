@@ -39,6 +39,7 @@ defaults:                     # used by rules that do not set the key
   fail_after: 1
   pass_after: 1
   output_tail: 10k            # how much module output is kept in a result
+  event_params: true          # events carry the rule's params; false hides a rule's details
 
 modules:
   repos:                      # default repositories for "onecheck module search"
@@ -53,6 +54,7 @@ rules:
     fail_after: 3             # consecutive failures before state "fail"
     pass_after: 2             # consecutive passes before state "pass" again
     output_tail: 1k           # output kept in the result; 0 keeps none
+    event_params: true        # false: no params in events, events marked "redacted"
     params:                   # input of the module, see docs/modules/
       url: https://example.com/health
     check:                    # conditions, see docs/checks.md
@@ -201,6 +203,11 @@ params:
 - An undefined variable makes that rule an error; it is never replaced by an
   empty string.
 - `check` is never expanded.
+- Events carry `params` as written here, with `${VAR}` not replaced, so a
+  secret passed this way does not reach a notification. A secret written into
+  the config as plain text does. `event_params: false` on a rule (or in
+  `defaults`) keeps the params out of its events altogether, see
+  [State and events](/state-and-events#what-an-event-can-reveal).
 
 ## Logging level
 

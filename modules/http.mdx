@@ -28,6 +28,11 @@ headers:
   Authorization: "Bearer ${API_TOKEN}"
 ```
 
+When a request fails, the error names the URL without its query string and
+without a user name and password, including the URL of a redirect:
+`Get "https://example.com/health": connection refused`. A token passed as
+`?token=...` does not end up in results, events, logs or notifications.
+
 ## Fields
 
 | Field | Type | Description |

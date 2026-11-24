@@ -39,6 +39,7 @@ Check a config without running it: <code>onecheck validate -c &lt;file&gt;</code
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">  fail_after</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">1</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">  pass_after</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">1</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">  output_tail</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF">10k</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D">            # how much module output is kept in a result</span></span>
+<span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">  event_params</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">true</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D">          # events carry the rule's params; false hides a rule's details</span></span>
 <span class="line"></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">modules</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">:</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">  repos</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">:                      </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D"># default repositories for "onecheck module search"</span></span>
@@ -53,6 +54,7 @@ Check a config without running it: <code>onecheck validate -c &lt;file&gt;</code
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">    fail_after</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">3</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D">             # consecutive failures before state "fail"</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">    pass_after</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">2</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D">             # consecutive passes before state "pass" again</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">    output_tail</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF">1k</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D">           # output kept in the result; 0 keeps none</span></span>
+<span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">    event_params</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">true</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D">        # false: no params in events, events marked "redacted"</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">    params</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">:                   </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D"># input of the module, see docs/modules/</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">      url</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF">https://example.com/health</span></span>
 <span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">    check</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">:                    </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D"># conditions, see docs/checks.md</span></span>
@@ -240,6 +242,11 @@ shell’s <code>$$</code>, <code>$1</code>, <code>$(...)</code>) is passed throu
 <li>An undefined variable makes that rule an error; it is never replaced by an
 empty string.</li>
 <li><code>check</code> is never expanded.</li>
+<li>Events carry <code>params</code> as written here, with <code>${VAR}</code> not replaced, so a
+secret passed this way does not reach a notification. A secret written into
+the config as plain text does. <code>event_params: false</code> on a rule (or in
+<code>defaults</code>) keeps the params out of its events altogether, see
+<a href="/onecheck/state-and-events#what-an-event-can-reveal">State and events</a>.</li>
 </ul>
 <h2 id="logging-level"><a class="blume-heading-anchor" href="#logging-level">Logging level</a></h2>
 <p>The level comes from, in order: <code>--log-level</code>, <code>log.level</code>, <code>info</code>.</p>

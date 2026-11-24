@@ -6,6 +6,10 @@ state as an **event**. This is what a notification service builds on: it gets
 told when something broke and when it recovered, once per change, regardless
 of which module the rule uses.
 
+[onenotify](https://alekzonder.github.io/onenotify) is such a service: it
+takes the events described here and delivers them to Telegram, mail or ntfy.
+onecheck itself sends nothing.
+
 ## Status and state
 
 Two different things are reported for each rule:
@@ -96,6 +100,11 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
   "to": "fail",
   "at": "2026-11-23T10:02:00Z",
   "expires_at": "2026-11-24T10:02:00Z",
+  "params": {
+    "url": "https://example.com/health",
+    "headers": { "Authorization": "Bearer ${API_TOKEN}" }
+  },
+  "redacted": false,
   "result": {
     "config": "main",
     "rule": "api-health",
@@ -137,11 +146,54 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
 | `from`, `to` | confirmed state before and after |
 | `at` | when the change was recorded (UTC, RFC 3339) |
 | `expires_at` | `at` + `events.ttl`; after this the event may be deleted |
+| `params` | the rule's `params` exactly as written in the config, before `${VAR}` is replaced; `null` when the rule has none or has `event_params: false` |
+| `redacted` | `true` when the rule has `event_params: false`: a consumer must not show the details of this event (params, failures, error) to third parties |
 | `result` | the full result of the run that caused the change, see [Output and results](/output-and-results#result-format) |
 
 For a `recovered` event, `result` is the passing run (`failures` is empty).
 For a `fail` event caused by a check that could not run, `result.status` is
 `error` and `result.error` holds the reason.
+
+### What an event can reveal
+
+An event is meant to be turned into a notification, which usually leaves the
+host: a chat, a mail, a push service. Two parts of it deserve a look.
+
+**Params.** `params` holds what the config file says, not what the module
+received. A secret passed as `${VAR}` stays `${VAR}`:
+
+```yaml
+params:
+  url: https://example.com/health
+  headers: { Authorization: "Bearer ${API_TOKEN}" }   # the event says ${API_TOKEN}
+```
+
+A secret typed into the config as plain text is copied into the event as it
+is. Use `${VAR}`, see
+[Configuration](/configuration#environment-variables-in-params).
+
+**Failures and errors.** A failure message names the value that was found:
+`body: expected contains "ok", got "<the first 1024 bytes of the body>"`. A
+condition on a response body or on a command's output therefore puts a piece
+of that body or output into the event. `result.output` holds its tail as
+well, see [Output and results](/output-and-results#saved-output).
+
+To keep a rule's details out of notifications, set `event_params: false`:
+
+```yaml
+rules:
+  - name: token-check
+    module: http
+    event_params: false   # the event has "params": null and "redacted": true
+    output_tail: 0        # and no saved output
+    params: { url: https://example.com/token }
+    check: { status: 200 }
+```
+
+The event is still written, with its full `result`: `redacted` is an
+instruction to the consumer. onenotify then sends only the rule name, the
+module, the tags and the time. `event_params` can be set for all rules in
+`defaults`.
 
 ### Consuming the queue
 
