@@ -53,7 +53,10 @@ Calls made in the design (not discussed in detail, correct if wrong):
   problem: `since + N × remind_every`, N = 1, 2, ... A run writes a reminder
   when the latest due time that has passed is later than the last reminder
   (or than `since`, when there was none). Delays of the scheduler therefore
-  do not add up, and a long gap gives one reminder.
+  do not add up, and a long gap gives one reminder. A run up to a tenth of
+  `remind_every` early counts as on time (added after the review: `since` is
+  itself a run time, so with `remind_every` equal to the run interval runs
+  land just before or after each due time and early ones were skipped).
 - **`error` runs.** For the state `error` already counts as `fail`; a rule in
   state `fail` whose run ends with `error` gets its reminder, with the reason
   in `result.error`.

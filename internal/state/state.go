@@ -49,8 +49,8 @@ func (s State) Consecutive(ok bool) int {
 // TransitionFail, TransitionRecovered or TransitionReminder.
 //
 // A reminder is due every remindEvery (0 = never) counted from the moment
-// the state became fail, and is returned by the first run after a due time
-// that did not pass: a run that passed while the state is still fail has
+// the state became fail, and is returned by the first run at a due time
+// (see reminderDue) that did not pass: a run that passed while the state is still fail has
 // nothing to remind of.
 func Advance(prev *State, ok bool, failAfter, passAfter int, remindEvery time.Duration, now time.Time) (next State, transition string) {
 	if prev == nil {
@@ -80,10 +80,14 @@ func Advance(prev *State, ok bool, failAfter, passAfter int, remindEvery time.Du
 // reminderDue reports whether a due time (since + N*remindEvery, N >= 1) has
 // passed that no reminder was written for yet. Counting from since keeps
 // late runs from shifting the schedule, and a long gap gives one reminder.
+//
+// A run up to a tenth of the interval early counts as on time: since is
+// itself the time of a run, so a config run every remindEvery lands a moment
+// before or after each due time, and the early runs must not be skipped.
 func reminderDue(s State, remindEvery time.Duration, now time.Time) bool {
 	if remindEvery <= 0 {
 		return false
 	}
-	n := now.Sub(s.Since) / remindEvery
+	n := (now.Sub(s.Since) + remindEvery/10) / remindEvery
 	return n >= 1 && s.Since.Add(n*remindEvery).After(s.RemindedAt)
 }

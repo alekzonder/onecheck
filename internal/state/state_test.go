@@ -80,8 +80,8 @@ func TestAdvanceReminders(t *testing.T) {
 		steps                []step
 	}{
 		{"due times count from the start", 1, 1, h, []step{
-			{0, false, TransitionFail}, {59 * m, false, ""}, {60 * m, false, TransitionReminder}, {61 * m, false, ""},
-			{119 * m, false, ""}, {121 * m, false, TransitionReminder},
+			{0, false, TransitionFail}, {53 * m, false, ""}, {60 * m, false, TransitionReminder}, {61 * m, false, ""},
+			{113 * m, false, ""}, {121 * m, false, TransitionReminder},
 		}},
 		{"late run does not shift the schedule", 1, 1, h, []step{
 			{0, false, TransitionFail}, {90 * m, false, TransitionReminder}, {120 * m, false, TransitionReminder},
@@ -142,5 +142,34 @@ func TestAdvanceRemindsAStateOfAnOlderVersion(t *testing.T) {
 	old := &State{State: Fail, Since: t0, ConsecutiveFail: 4}
 	if _, tr := Advance(old, false, 1, 1, time.Hour, t0.Add(3*time.Hour)); tr != TransitionReminder {
 		t.Errorf("transition = %q, want a reminder", tr)
+	}
+}
+
+// A config run at the same interval as remind_every never lands exactly on
+// the due times: every run but the first must still write its reminder.
+func TestAdvanceRemindsOnEveryRunOfTheSameInterval(t *testing.T) {
+	t0 := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+	jitter := []time.Duration{0, 300, -200, 400, -350, 50, -400, 0, 250, -100} // milliseconds
+	for _, every := range []time.Duration{time.Minute, time.Hour} {
+		s, _ := Advance(nil, false, 1, 1, every, t0)
+		for i := 1; i <= 200; i++ {
+			at := t0.Add(time.Duration(i)*every + jitter[i%len(jitter)]*time.Millisecond)
+			next, tr := Advance(&s, false, 1, 1, every, at)
+			if tr != TransitionReminder {
+				t.Fatalf("remind_every %s, run %d at %s: transition=%q, want a reminder", every, i, at.Sub(t0), tr)
+			}
+			s = next
+		}
+	}
+}
+
+func TestAdvanceRemindsSlightlyEarlyRun(t *testing.T) {
+	t0 := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+	s, _ := Advance(nil, false, 1, 1, time.Hour, t0)
+	if _, tr := Advance(&s, false, 1, 1, time.Hour, t0.Add(53*time.Minute)); tr != "" {
+		t.Errorf("53m of 1h: transition=%q, want none", tr)
+	}
+	if _, tr := Advance(&s, false, 1, 1, time.Hour, t0.Add(54*time.Minute)); tr != TransitionReminder {
+		t.Errorf("54m of 1h is within a tenth of the interval: transition=%q, want a reminder", tr)
 	}
 }

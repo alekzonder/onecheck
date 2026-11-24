@@ -108,7 +108,9 @@ rules:
 - Reminders are due at fixed times counted from the start of the problem:
   after `remind_every`, after twice that, and so on. A reminder is written by
   the first run after a due time, so a run that starts late does not shift
-  the following ones.
+  the following ones. A run up to a tenth of `remind_every` early counts as
+  on time: with `remind_every` equal to the interval the config is run at,
+  every run of a failed rule writes a reminder.
 - One run writes at most one reminder for a rule. After the host was down
   for a day there is one reminder, not twenty-four.
 - A run that **passed** writes no reminder, even if the state is still `fail`
@@ -308,7 +310,7 @@ consumer may see a duplicate, never a gap.
 | `<paths.state>/<name>/<rule>.json` | confirmed state, consecutive counters, time of the last reminder and of the previous run | internal, do not edit |
 | `<paths.state>/<name>/.lock`, `.owner` | run lock; which config file owns the name | internal |
 | `<paths.results>/<name>/<rule>.json` | latest result of the rule | overwritten every run |
-| `<paths.events>/<id>.json` | one state change | until consumed or expired |
+| `<paths.events>/<id>.json` | one state change or reminder | until consumed or expired |
 
 State and result files of a rule that was removed from the config (or
 disabled) are deleted by the next full run, that is a run without `--rule` or

@@ -19,7 +19,7 @@ const pathsLong = `Show the full path of everything onecheck reads and writes fo
   log       the log file
   state     the confirmed state of each rule, kept between runs
   results   the latest result of each rule
-  events    the event queue: one file per pass/fail transition
+  events    the event queue: one file per pass/fail transition or reminder
   modules   where modules are looked for
   binary    the onecheck executable itself
 
