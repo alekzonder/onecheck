@@ -210,9 +210,9 @@ func runOne(ctx context.Context, cfg *config.Config, job prepared, log *slog.Log
 }
 
 // record applies the outcome to the rule's state and writes, in this order,
-// the event (if the confirmed state changed), the state and the result. If
-// the event cannot be written the state stays untouched, so the transition
-// is detected again on the next run instead of being lost.
+// the event (if the confirmed state changed or a reminder is due), the state
+// and the result. If the event cannot be written the state stays untouched,
+// so the transition is detected again on the next run instead of being lost.
 func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.Result, now time.Time, log *slog.Logger) error {
 	prev, err := st.LoadState(res.Rule)
 	if errors.Is(err, store.ErrCorrupt) {
@@ -230,25 +230,16 @@ func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.R
 	res.Consecutive = next.Consecutive(res.OK())
 	if transition != "" {
 		res.Transition = &transition
-		event := result.Event{
-			ID:         store.EventID(now, cfg.Name, res.Rule, transition),
-			Config:     cfg.Name,
-			Rule:       res.Rule,
-			Transition: transition,
-			From:       from,
-			To:         next.State,
-			At:         now,
-			ExpiresAt:  now.Add(time.Duration(cfg.Events.TTL)),
-			Redacted:   !rule.EventParams,
-			Result:     *res,
-		}
-		if rule.EventParams {
-			event.Params = rule.RawParams
-		}
+		event := newEvent(cfg, rule, res, from, next, now)
 		if err := st.WriteEvent(event); err != nil {
 			return fmt.Errorf("cannot write event: %w", err)
 		}
-		log.Info("state changed", "rule", res.Rule, "transition", transition, "event", event.ID)
+		if transition == state.TransitionReminder {
+			log.Info("reminder written", "rule", res.Rule, "failing_since", next.Since, "event", event.ID)
+			warnShortRemindEvery(log, rule, prev, now)
+		} else {
+			log.Info("state changed", "rule", res.Rule, "transition", transition, "event", event.ID)
+		}
 	}
 	if err := st.SaveState(res.Rule, next); err != nil {
 		return fmt.Errorf("cannot save state: %w", err)
@@ -260,6 +251,47 @@ func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.R
 		"consecutive", res.Consecutive, "fail_after", res.FailAfter, "pass_after", res.PassAfter)
 	logResult(log, res)
 	return nil
+}
+
+// newEvent builds the event of the transition named in res.Transition.
+func newEvent(cfg *config.Config, rule config.Rule, res *result.Result, from string, next state.State, now time.Time) result.Event {
+	event := result.Event{
+		ID:         store.EventID(now, cfg.Name, res.Rule, *res.Transition),
+		Config:     cfg.Name,
+		Rule:       res.Rule,
+		Transition: *res.Transition,
+		From:       from,
+		To:         next.State,
+		At:         now,
+		ExpiresAt:  now.Add(time.Duration(cfg.Events.TTL)),
+		Since:      next.Since,
+		Redacted:   !rule.EventParams,
+		Result:     *res,
+	}
+	if rule.EventParams {
+		event.Params = rule.RawParams
+	}
+	return event
+}
+
+// warnShortRemindEvery reports a remind_every that the schedule of the
+// config cannot keep: reminders then come with every run. onecheck does not
+// know its schedule, so it compares with the time since the rule's previous
+// run. The built-in default is not reported: nobody chose it.
+func warnShortRemindEvery(log *slog.Logger, rule config.Rule, prev *state.State, now time.Time) {
+	if !rule.RemindExplicit || prev == nil || prev.CheckedAt.IsZero() {
+		return
+	}
+	if gap := now.Sub(prev.CheckedAt); remindShorterThanRuns(rule.RemindEvery, gap) {
+		log.Warn("remind_every is shorter than the time between runs, a reminder is written on every run",
+			"rule", rule.Name, "remind_every", rule.RemindEvery.String(), "since_last_run", gap.Round(time.Second).String())
+	}
+}
+
+// remindShorterThanRuns allows a tenth of the interval for runs that start
+// late: remind_every equal to the schedule is fine.
+func remindShorterThanRuns(remindEvery, sinceLastRun time.Duration) bool {
+	return sinceLastRun > remindEvery+remindEvery/10
 }
 
 // wantedFields is what the module is asked for: the fields the conditions

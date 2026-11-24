@@ -30,8 +30,9 @@ type Result struct {
 	Status Status `json:"status"`
 	// State is the confirmed state after this run (pass or fail).
 	State string `json:"state"`
-	// Transition is "fail" or "recovered" when this run changed the
-	// confirmed state, otherwise null.
+	// Transition says which event this run wrote: "fail" or "recovered"
+	// when it changed the confirmed state, "reminder" when the rule stays
+	// failed and a reminder was due, otherwise null.
 	Transition *string `json:"transition"`
 	// Consecutive is how many runs in a row ended like this one.
 	Consecutive int             `json:"consecutive"`
@@ -65,7 +66,8 @@ func (r Result) MarshalJSON() ([]byte, error) {
 // OK reports whether the run passed.
 func (r Result) OK() bool { return r.Status == Pass }
 
-// Event is written to the event queue when a rule's confirmed state changes.
+// Event is written to the event queue when a rule's confirmed state changes
+// and, as a reminder, while it stays failed.
 type Event struct {
 	ID         string    `json:"id"`
 	Config     string    `json:"config"`
@@ -75,6 +77,9 @@ type Event struct {
 	To         string    `json:"to"`
 	At         time.Time `json:"at"`
 	ExpiresAt  time.Time `json:"expires_at"`
+	// Since is when the confirmed state the event reports (To) began: At
+	// for a change of state, the start of the problem for a reminder.
+	Since time.Time `json:"since"`
 	// Params is the rule's params as written in the config, before ${VAR}
 	// expansion; null when the rule has none or hides them.
 	Params map[string]any `json:"params"`
