@@ -76,6 +76,7 @@ read as operators.
 | [`contains`](#contains-not_contains) / `not_contains` | string, array, object | substring / element / key is (not) present |
 | [`starts_with`](#starts_with-ends_with) / `ends_with` | string | the string starts / ends with this |
 | [`matches`](#matches-not_matches) / `not_matches` | string | the regular expression matches (does not match) |
+| [`glob`](#glob-not_glob) / `not_glob` | string | the whole string matches (does not match) a shell pattern |
 | [`gt`, `gte`, `lt`, `lte`](#gt-gte-lt-lte) | number | greater / greater-or-equal / less / less-or-equal |
 | [`in`](#in-not_in) / `not_in` | anything | the value is (not) one of the list |
 | [`exists`](#exists) | anything | the path is present (`true`) or absent (`false`) |
@@ -136,6 +137,27 @@ stdout: { matches: '(?m)^active$' }
 ```
 
 Write regular expressions in single quotes so YAML leaves backslashes alone.
+
+### `glob`, `not_glob`
+
+Shell patterns, matched against the **whole** string, case-sensitive:
+
+| Pattern | Matches |
+|---|---|
+| `*` | any run of characters, including `/` and none at all |
+| `?` | exactly one character |
+| `[abc]`, `[a-z]` | one character from the set or range |
+| `[!abc]` | one character not in the set |
+
+Everything else is literal: `.` is a dot, `+` is a plus.
+
+```yaml
+image: { glob: "registry.local/*" }      # any image from this registry
+name: { not_glob: "tmp-*" }
+```
+
+Quote patterns that start with `*` or `[`: YAML reads those characters
+specially.
 
 ### `gt`, `gte`, `lt`, `lte`
 

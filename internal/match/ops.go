@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/alekzonder/onecheck/internal/glob"
 	"github.com/alekzonder/onecheck/internal/units"
 	"github.com/alekzonder/onecheck/pkg/module"
 )
@@ -29,6 +30,8 @@ func init() {
 		"gte":          buildCompare(func(a, b float64) bool { return a >= b }),
 		"lt":           buildCompare(func(a, b float64) bool { return a < b }),
 		"lte":          buildCompare(func(a, b float64) bool { return a <= b }),
+		"glob":         buildGlob(false),
+		"not_glob":     buildGlob(true),
 		"in":           buildIn(false),
 		"not_in":       buildIn(true),
 		"type":         buildType,
@@ -126,6 +129,26 @@ func buildMatches(negate bool) builder {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			return nil, fmt.Errorf("invalid regular expression: %w", err)
+		}
+		return leaf{op: name, expected: arg, fn: func(v any) (bool, string) {
+			s, ok := v.(string)
+			if !ok {
+				return false, "not applicable to a " + typeName(v)
+			}
+			return re.MatchString(s) != negate, ""
+		}}, nil
+	}
+}
+
+func buildGlob(negate bool) builder {
+	return func(name string, arg any, _ module.FieldType) (node, error) {
+		pattern, ok := arg.(string)
+		if !ok {
+			return nil, fmt.Errorf("needs a shell pattern string, got %s", toJSON(arg))
+		}
+		re, err := glob.Compile(pattern)
+		if err != nil {
+			return nil, err
 		}
 		return leaf{op: name, expected: arg, fn: func(v any) (bool, string) {
 			s, ok := v.(string)

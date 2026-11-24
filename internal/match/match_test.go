@@ -113,6 +113,11 @@ func TestOperators(t *testing.T) {
 		{"length object", `headers: {length: 2}`, true},
 		{"length fail", `items: {length: {gt: 3}}`, false},
 		{"length wrong type", `status: {length: 3}`, false},
+		{"glob", `headers.content-type: {glob: "application/*"}`, true},
+		{"glob whole string", `headers.content-type: {glob: "json*"}`, false},
+		{"glob wrong type", `status: {glob: "2*"}`, false},
+		{"not_glob", `headers.content-type: {not_glob: "text/*"}`, true},
+		{"not_glob fail", `headers.content-type: {not_glob: "*utf-8"}`, false},
 		{"and of operators", `status: {gte: 200, lt: 300}`, true},
 		{"and of operators fail", `status: {gte: 200, lt: 200}`, false},
 	}
@@ -303,6 +308,8 @@ func TestCompileErrors(t *testing.T) {
 		"bad schema":           `body: {json: {schema: {type: 12}}}`,
 		"starts_with number":   `body: {starts_with: 1}`,
 		"empty condition":      `status: {}`,
+		"glob needs string":    `body: {glob: 1}`,
+		"bad glob":             `body: {glob: "[a"}`,
 	}
 	for name, check := range cases {
 		if _, err := compile(t, check); err == nil {
