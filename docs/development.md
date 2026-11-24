@@ -144,6 +144,10 @@ onecheck_<os>_<arch>
 onecheck-file_<os>_<arch>
 onecheck-http_<os>_<arch>
 onecheck-command_<os>_<arch>
+onecheck-disk_<os>_<arch>
+onecheck-systemd_<os>_<arch>
+onecheck-cpu_<os>_<arch>
+onecheck-memory_<os>_<arch>
 checksums.txt
 ```
 
