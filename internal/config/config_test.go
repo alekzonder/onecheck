@@ -409,3 +409,102 @@ func TestLoadRemembersIncludeFiles(t *testing.T) {
 		t.Errorf("Includes = %v, want %v", cfg.Includes, want)
 	}
 }
+
+func TestRawParamsKeepVariables(t *testing.T) {
+	t.Setenv("TOKEN", "s3cret")
+	path := write(t, t.TempDir(), "config.yaml", `name: main
+rules:
+  - name: a
+    module: http
+    params:
+      url: "https://x/?t=${TOKEN}"
+      n: 3
+      list: [a, "${TOKEN}"]
+      nested: {h: "Bearer ${TOKEN}"}
+      esc: "$${TOKEN}"
+  - name: bare
+    module: file
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Rules[0]
+	if r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r.Params["url"] != "https://x/?t=s3cret" || r.Params["esc"] != "${TOKEN}" {
+		t.Errorf("params = %v", r.Params)
+	}
+	if r.Params["nested"].(map[string]any)["h"] != "Bearer s3cret" {
+		t.Errorf("params = %v", r.Params)
+	}
+	raw := r.RawParams
+	if raw["url"] != "https://x/?t=${TOKEN}" || raw["n"] != 3 || raw["esc"] != "$${TOKEN}" {
+		t.Errorf("raw params = %v", raw)
+	}
+	if raw["list"].([]any)[1] != "${TOKEN}" || raw["nested"].(map[string]any)["h"] != "Bearer ${TOKEN}" {
+		t.Errorf("raw params = %v", raw)
+	}
+	if cfg.Rules[1].RawParams != nil {
+		t.Errorf("a rule without params has raw params %v", cfg.Rules[1].RawParams)
+	}
+}
+
+func TestRawParamsOfARuleWithAnUndefinedVariable(t *testing.T) {
+	path := write(t, t.TempDir(), "config.yaml",
+		"name: main\nrules:\n  - name: a\n    module: http\n    params: {url: \"https://x/${ONECHECK_TEST_UNSET}\"}\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Rules[0]
+	if r.Err == nil || r.Params != nil {
+		t.Fatalf("rule = %+v", r)
+	}
+	if r.RawParams["url"] != "https://x/${ONECHECK_TEST_UNSET}" {
+		t.Errorf("raw params = %v", r.RawParams)
+	}
+}
+
+func TestEventParamsDefaultsAndOverride(t *testing.T) {
+	load := func(defaults string) []Rule {
+		t.Helper()
+		path := write(t, t.TempDir(), "config.yaml", "name: main\n"+defaults+`rules:
+  - name: plain
+    module: file
+  - name: shown
+    module: file
+    event_params: true
+  - name: hidden
+    module: file
+    event_params: false
+`)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg.Rules
+	}
+	got := func(rules []Rule) [3]bool {
+		return [3]bool{rules[0].EventParams, rules[1].EventParams, rules[2].EventParams}
+	}
+	if g := got(load("")); g != [3]bool{true, true, false} {
+		t.Errorf("default: %v", g)
+	}
+	if g := got(load("defaults: {event_params: false}\n")); g != [3]bool{false, true, false} {
+		t.Errorf("defaults.event_params false: %v", g)
+	}
+}
+
+func TestEventParamsNotBoolean(t *testing.T) {
+	path := write(t, t.TempDir(), "config.yaml",
+		"name: main\nrules:\n  - name: a\n    module: file\n    event_params: maybe\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rules[0].Err == nil {
+		t.Error("event_params: maybe must make the rule invalid")
+	}
+}

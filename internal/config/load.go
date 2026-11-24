@@ -23,16 +23,17 @@ type fileRules struct {
 
 // rawRule mirrors the YAML shape of a rule.
 type rawRule struct {
-	Name       string         `yaml:"name"`
-	Module     string         `yaml:"module"`
-	Tags       []string       `yaml:"tags"`
-	Enabled    *bool          `yaml:"enabled"`
-	Timeout    *Duration      `yaml:"timeout"`
-	FailAfter  *int           `yaml:"fail_after"`
-	PassAfter  *int           `yaml:"pass_after"`
-	OutputTail *Size          `yaml:"output_tail"`
-	Params     map[string]any `yaml:"params"`
-	Check      map[string]any `yaml:"check"`
+	Name        string         `yaml:"name"`
+	Module      string         `yaml:"module"`
+	Tags        []string       `yaml:"tags"`
+	Enabled     *bool          `yaml:"enabled"`
+	Timeout     *Duration      `yaml:"timeout"`
+	FailAfter   *int           `yaml:"fail_after"`
+	PassAfter   *int           `yaml:"pass_after"`
+	OutputTail  *Size          `yaml:"output_tail"`
+	EventParams *bool          `yaml:"event_params"`
+	Params      map[string]any `yaml:"params"`
+	Check       map[string]any `yaml:"check"`
 }
 
 // Load reads the config file and its includes. A returned error means the
@@ -178,13 +179,14 @@ func (c *Config) addRules(nodes []yaml.Node, source string, sources map[string]s
 
 func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	rule := Rule{
-		Name:       name,
-		Source:     source,
-		Enabled:    true,
-		Timeout:    time.Duration(c.Defaults.Timeout),
-		FailAfter:  c.Defaults.FailAfter,
-		PassAfter:  c.Defaults.PassAfter,
-		OutputTail: int64(c.Defaults.OutputTail),
+		Name:        name,
+		Source:      source,
+		Enabled:     true,
+		Timeout:     time.Duration(c.Defaults.Timeout),
+		FailAfter:   c.Defaults.FailAfter,
+		PassAfter:   c.Defaults.PassAfter,
+		OutputTail:  int64(c.Defaults.OutputTail),
+		EventParams: c.Defaults.EventParams,
 	}
 	var raw rawRule
 	// Decoding the node (not its text) keeps anchors defined in other rules
@@ -213,6 +215,11 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 	if raw.OutputTail != nil {
 		rule.OutputTail = int64(*raw.OutputTail)
 	}
+	if raw.EventParams != nil {
+		rule.EventParams = *raw.EventParams
+	}
+	// expandEnv builds a new value, so the params as written stay intact.
+	rule.RawParams = raw.Params
 	params, err := expandEnv(raw.Params)
 	if err != nil {
 		rule.Err = err
@@ -225,7 +232,7 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 
 var ruleKeys = map[string]bool{
 	"name": true, "module": true, "tags": true, "enabled": true, "timeout": true,
-	"fail_after": true, "pass_after": true, "output_tail": true, "params": true, "check": true,
+	"fail_after": true, "pass_after": true, "output_tail": true, "event_params": true, "params": true, "check": true,
 	"<<": true, // YAML merge key
 }
 
@@ -239,7 +246,7 @@ func unknownRuleKeys(node *yaml.Node) error {
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if key := node.Content[i].Value; !ruleKeys[key] {
-			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, output_tail, params, check)",
+			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, output_tail, event_params, params, check)",
 				node.Content[i].Line, key)
 		}
 	}

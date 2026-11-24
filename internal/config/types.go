@@ -77,6 +77,9 @@ type Defaults struct {
 	// OutputTail is how much of each output field of a module (a command's
 	// stdout and stderr, a response body) is kept in the result.
 	OutputTail Size `yaml:"output_tail"`
+	// EventParams says whether events carry the rule's params (as written
+	// in the config) and may be shown in full by a notification service.
+	EventParams bool `yaml:"event_params"`
 }
 
 // Modules configures module management.
@@ -114,6 +117,11 @@ type Rule struct {
 	OutputTail int64
 	// Params is the module input, with ${VAR} already expanded.
 	Params map[string]any
+	// RawParams is the module input as written in the config, before ${VAR}
+	// expansion. Only events use it: it is safe to show where Params is not.
+	RawParams map[string]any
+	// EventParams is false when the rule's details must stay out of events.
+	EventParams bool
 	// Check holds the raw conditions for the matching engine.
 	Check map[string]any
 	// Source is the file the rule was read from.
