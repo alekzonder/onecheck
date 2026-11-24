@@ -6,6 +6,10 @@ state as an **event**. This is what a notification service builds on: it gets
 told when something broke and when it recovered, once per change, regardless
 of which module the rule uses.
 
+[onenotify](https://alekzonder.github.io/onenotify) is such a service: it
+takes the events described here and delivers them to Telegram, mail or ntfy.
+onecheck itself sends nothing.
+
 ## Status and state
 
 Two different things are reported for each rule:

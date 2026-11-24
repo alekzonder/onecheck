@@ -31,6 +31,8 @@ $ echo $?
   `fail_after: 3` a rule must fail three times in a row before it is
   considered failed. Each confirmed change is written as a JSON event for a
   notification service to pick up.
+- **Notifications are a separate tool.** [onenotify](https://alekzonder.github.io/onenotify)
+  takes the events and sends them to Telegram, mail or ntfy.
 
 ## Quick start
 
