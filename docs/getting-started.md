@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh
 
 The script detects the system and CPU, asks GitHub for the latest release,
 verifies the download against the release's `checksums.txt`, and installs
-onecheck together with the bundled modules (`file`, `http`, `command`, `disk`, `systemd`) of the
+onecheck together with the bundled modules (`file`, `http`, `command`, `disk`, `systemd`, `cpu`, `memory`) of the
 same version.
 
 A specific version:
@@ -67,7 +67,7 @@ config, or install with `--modules-dir ~/.local/lib/onecheck/modules`.
    onecheck version
    ```
 
-2. Install the bundled modules (`file`, `http`, `command`, `disk`, `systemd`):
+2. Install the bundled modules (`file`, `http`, `command`, `disk`, `systemd`, `cpu`, `memory`):
 
    ```sh
    onecheck module install alekzonder/onecheck --modules-dir /usr/lib/onecheck/modules

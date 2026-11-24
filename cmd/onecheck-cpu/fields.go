@@ -32,7 +32,7 @@ func parseWindow(s string) (time.Duration, error) {
 	}
 	d := time.Duration(math.Round(secs * float64(time.Second)))
 	if d < minWindow || d > maxWindow {
-		return 0, fmt.Errorf("invalid params: window %q must be from %v to %v", s, minWindow, maxWindow)
+		return 0, fmt.Errorf("invalid params: window %q must be from 100ms to 5m", s)
 	}
 	return d, nil
 }
