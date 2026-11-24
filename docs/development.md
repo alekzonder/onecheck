@@ -14,7 +14,7 @@ Rules for contributors (commit messages, merges, limits) are in
 
 | Target | What it does |
 |---|---|
-| `make build` | builds `dist/onecheck` and `dist/modules/onecheck-{file,http,command,disk}` |
+| `make build` | builds `dist/onecheck` and `dist/modules/onecheck-{file,http,command,disk,systemd}` |
 | `make test` | `go test -race ./...` |
 | `make fmt` | formats the code with `gofmt` |
 | `make lint` | `golangci-lint`, including cyclomatic complexity |

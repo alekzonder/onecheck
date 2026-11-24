@@ -9,7 +9,7 @@
 set -eu
 
 REPO="alekzonder/onecheck"
-MODULES="file http command disk"
+MODULES="file http command disk systemd"
 API="${ONECHECK_GITHUB_API:-https://api.github.com}"
 DOWNLOAD="${ONECHECK_DOWNLOAD_URL:-https://github.com/$REPO/releases/download}"
 
@@ -23,7 +23,7 @@ Options:
   --version <v>      version to install, e.g. 0.1.0 (default: the latest release)
   --root <dir>       where versions are kept, as <dir>/versions/<v>/onecheck
   --bin-dir <dir>    where the "onecheck" symlink is created
-  --modules-dir <d>  where the bundled modules (file, http, command, disk) go
+  --modules-dir <d>  where the bundled modules (file, http, command, disk, systemd) go
   --no-modules       install onecheck only, without modules
   -h, --help         show this help
 

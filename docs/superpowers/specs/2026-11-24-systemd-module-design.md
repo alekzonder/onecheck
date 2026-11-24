@@ -92,7 +92,7 @@ Raw:
 
 | Field | Type | Description |
 |---|---|---|
-| `properties` | object | `{Name: value}` for every name in `params.properties`, values as strings exactly as `systemctl show` prints them; a property systemd does not know is absent |
+| `properties` | object | `{Name: value}` for every name in `params.properties`, integers as numbers (so `lt`/`gt` work; our call after the end-to-end run showed the core does not compare strings numerically), everything else as strings exactly as `systemctl show` prints them; a property systemd does not know is absent |
 
 Durations are seconds (float), like the `file` module's `age`.
 
@@ -134,7 +134,7 @@ Durations are seconds (float), like the `file` module's `age`.
 
 ```yaml
 # must run and start on boot
-- id: nginx
+- name: nginx
   module: systemd
   params: { unit: nginx.service }
   check:
@@ -142,7 +142,7 @@ Durations are seconds (float), like the `file` module's `age`.
     unit_file_state: { equals: enabled }
 
 # must be stopped and not come back after reboot
-- id: telnet-off
+- name: telnet-off
   module: systemd
   params: { unit: telnet.socket }
   check:
@@ -150,7 +150,7 @@ Durations are seconds (float), like the `file` module's `age`.
     unit_file_state: { in: [disabled, masked, ""] }
 
 # no crash loop
-- id: app-stable
+- name: app-stable
   module: systemd
   params: { unit: app.service }
   check:
@@ -158,7 +158,7 @@ Durations are seconds (float), like the `file` module's `age`.
     restarts: { lt: 3 }
 
 # daily backup fires and succeeds
-- id: backup
+- name: backup
   module: systemd
   params: { unit: backup.timer }
   check:

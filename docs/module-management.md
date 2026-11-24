@@ -128,7 +128,7 @@ onecheck and modules are versioned independently. What must match is the
 Module versions themselves (semver, the release tag without the leading `v`)
 are only used to decide whether an update is available.
 
-Bundled modules (`file`, `http`, `command`, `disk`) are released together with
+Bundled modules (`file`, `http`, `command`, `disk`, `systemd`) are released together with
 onecheck from the same repository and carry the same version number, but any
 mix that shares a protocol version works.
 

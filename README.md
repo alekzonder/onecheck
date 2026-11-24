@@ -20,7 +20,7 @@ $ echo $?
 ## How it works
 
 - **Modules collect, onecheck decides.** A check type (`file`, `http`,
-  `command`, `disk`, ...) is a separate executable, `onecheck-<name>`, living in a
+  `command`, `disk`, `systemd`, ...) is a separate executable, `onecheck-<name>`, living in a
   modules directory. A module only returns values (status code, file size,
   stdout, ...). All comparisons are done by one engine inside onecheck, so
   every operator works the same for every module.
@@ -66,7 +66,7 @@ echo '17 3 * * * root  onecheck logrotate >/dev/null'    >> /etc/cron.d/onecheck
 | [Getting started](docs/getting-started.md) | install, first config, cron and systemd |
 | [Configuration](docs/configuration.md) | every config key, includes, defaults |
 | [Checks](docs/checks.md) | the `check` block: paths, all operators, JSON and JSON Schema |
-| Modules | [file](docs/modules/file.md), [http](docs/modules/http.md), [command](docs/modules/command.md), [disk](docs/modules/disk.md) |
+| Modules | [file](docs/modules/file.md), [http](docs/modules/http.md), [command](docs/modules/command.md), [disk](docs/modules/disk.md), [systemd](docs/modules/systemd.md) |
 | [State and events](docs/state-and-events.md) | `fail_after` / `pass_after`, the event queue contract |
 | [Output and results](docs/output-and-results.md) | exit codes, text and JSON output, result files |
 | [Module management](docs/module-management.md) | search, install, update, remove, self-update |
@@ -79,7 +79,7 @@ echo '17 3 * * * root  onecheck logrotate >/dev/null'    >> /etc/cron.d/onecheck
 ## Build from source
 
 ```sh
-make build     # dist/onecheck and dist/modules/onecheck-{file,http,command,disk}
+make build     # dist/onecheck and dist/modules/onecheck-{file,http,command,disk,systemd}
 make check     # gofmt, go vet, golangci-lint (cyclomatic complexity <= 25), tests
 ```
 
