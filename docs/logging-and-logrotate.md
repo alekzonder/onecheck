@@ -10,7 +10,8 @@ Every run appends to
 
 by default `/var/log/onecheck/<name>/onecheck.log` for root and
 `$HOME/.local/state/onecheck/log/<name>/onecheck.log` for other users. The
-directory is created when needed.
+directory is created when needed. `onecheck paths` prints the exact path for
+the current config.
 
 ```yaml
 log:

@@ -372,3 +372,40 @@ func TestOutputTail(t *testing.T) {
 		t.Errorf("output_tail 0 must switch saving off: %d, %v", r.OutputTail, r.Err)
 	}
 }
+
+func TestLocateReportsTheSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("ONECHECK_CONFIG", "")
+	homeCfg := write(t, home, ".config/onecheck/config.yaml", "name: home\n")
+	envCfg := write(t, t.TempDir(), "env.yaml", "name: env\n")
+	flagCfg := write(t, t.TempDir(), "flag.yaml", "name: flag\n")
+
+	if _, err := os.Stat(systemConfig); err != nil {
+		if got, src, err := Locate(""); err != nil || got != homeCfg || src != SourceDefault {
+			t.Errorf("Locate() = %q, %q, %v; want home config from the default location", got, src, err)
+		}
+	}
+	t.Setenv("ONECHECK_CONFIG", envCfg)
+	if got, src, _ := Locate(""); got != envCfg || src != SourceEnv {
+		t.Errorf("Locate() = %q, %q; want env config", got, src)
+	}
+	if got, src, _ := Locate(flagCfg); got != flagCfg || src != SourceFlag {
+		t.Errorf("Locate(flag) = %q, %q; want flag config", got, src)
+	}
+}
+
+func TestLoadRemembersIncludeFiles(t *testing.T) {
+	dir := t.TempDir()
+	main := write(t, dir, "config.yaml", "name: main\ninclude: [conf.d/*.yaml, missing/*.yaml]\n")
+	write(t, dir, "conf.d/20-b.yaml", "rules:\n  - {name: b, module: file}\n")
+	write(t, dir, "conf.d/10-a.yaml", "rules:\n  - {name: a, module: file}\n")
+	cfg, err := Load(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(dir, "conf.d/10-a.yaml"), filepath.Join(dir, "conf.d/20-b.yaml")}
+	if strings.Join(cfg.Includes, ",") != strings.Join(want, ",") {
+		t.Errorf("Includes = %v, want %v", cfg.Includes, want)
+	}
+}

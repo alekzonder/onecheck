@@ -99,6 +99,65 @@ contain pieces of what was checked, such as file content or command output,
 so they are not readable by everyone. To let another service read results or
 events, put its user into the group owning the directories.
 
+## Where everything is: `onecheck paths`
+
+`onecheck paths` prints the full path of everything onecheck reads and writes
+for the config it would use, so the paths do not have to be worked out from
+the tables above:
+
+```
+$ onecheck paths
+config    /etc/onecheck/config.yaml  (from default location)
+name      main
+include   /etc/onecheck/conf.d/api.yaml
+include   /etc/onecheck/conf.d/db.yaml
+log       /var/log/onecheck/main/onecheck.log
+state     /var/lib/onecheck/state/main
+results   /var/lib/onecheck/results/main
+events    /var/lib/onecheck/events  (missing)
+modules   /usr/lib/onecheck/modules
+binary    /usr/local/lib/onecheck/versions/0.1.2/onecheck
+```
+
+| Line | Meaning |
+|---|---|
+| `config` | the config file and how it was found: `--config`, `ONECHECK_CONFIG` or `default location` |
+| `name` | the config's `name`; it is part of the log, state and results paths |
+| `include` | every include file that was read, in reading order |
+| `log` | the log file, see [logging-and-logrotate.md](logging-and-logrotate.md) |
+| `state` | the confirmed state of each rule, see [state-and-events.md](state-and-events.md#files) |
+| `results` | the latest result of each rule |
+| `events` | the event queue, shared by all configs on the host |
+| `modules` | where modules are looked for |
+| `binary` | the onecheck executable itself, with symlinks resolved |
+
+`(missing)` marks a path that does not exist yet. The log, state, results and
+events paths are created by the first run, so they are missing on a fresh
+install.
+
+The command changes nothing, does not need the modules to be installed and
+works with rules that are broken. If the config file is found but cannot be
+loaded, its path is still printed, followed by the error, and the exit code
+is `2`.
+
+`onecheck paths --json` prints the same for scripts:
+
+```json
+{
+  "name": "main",
+  "config": { "path": "/etc/onecheck/config.yaml", "exists": true, "source": "default location" },
+  "includes": [
+    { "path": "/etc/onecheck/conf.d/api.yaml", "exists": true }
+  ],
+  "log": { "path": "/var/log/onecheck/main/onecheck.log", "exists": true },
+  "state": { "path": "/var/lib/onecheck/state/main", "exists": true },
+  "results": { "path": "/var/lib/onecheck/results/main", "exists": true },
+  "events": { "path": "/var/lib/onecheck/events", "exists": false },
+  "modules": { "path": "/usr/lib/onecheck/modules", "exists": true },
+  "binary": { "path": "/usr/local/lib/onecheck/versions/0.1.2/onecheck", "exists": true }
+}
+```
+
 ## Includes (`conf.d/`)
 
 ```yaml

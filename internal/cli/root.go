@@ -51,6 +51,9 @@ const rootExample = `  # run every rule of the default config
   # check a config without running anything
   onecheck validate -c ./config.yaml
 
+  # show where the config, log, state and events of this config are
+  onecheck paths
+
   # install the bundled modules
   onecheck module install alekzonder/onecheck`
 
@@ -104,6 +107,6 @@ func (a *app) rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn or error; overrides the config and also prints the log on stderr")
 	addRunFlags(root, run)
 
-	root.AddCommand(a.runCmd(), a.validateCmd(), a.moduleCmd(), a.selfUpdateCmd(), a.logrotateCmd(), a.versionCmd())
+	root.AddCommand(a.runCmd(), a.validateCmd(), a.pathsCmd(), a.moduleCmd(), a.selfUpdateCmd(), a.logrotateCmd(), a.versionCmd())
 	return root
 }

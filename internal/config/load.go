@@ -68,6 +68,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	cfg.Includes = files
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {

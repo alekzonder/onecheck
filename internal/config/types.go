@@ -88,10 +88,12 @@ type Modules struct {
 type Config struct {
 	Name string `yaml:"name"`
 	// Path is the absolute path of the main config file.
-	Path     string   `yaml:"-"`
-	Log      Log      `yaml:"log"`
-	Paths    Paths    `yaml:"paths"`
-	Include  []string `yaml:"include"`
+	Path    string   `yaml:"-"`
+	Log     Log      `yaml:"log"`
+	Paths   Paths    `yaml:"paths"`
+	Include []string `yaml:"include"`
+	// Includes are the include files that were read, in reading order.
+	Includes []string `yaml:"-"`
 	Events   Events   `yaml:"events"`
 	Run      Run      `yaml:"run"`
 	Defaults Defaults `yaml:"defaults"`

@@ -125,6 +125,7 @@ for everything `check` can express.
 
 ```sh
 onecheck validate          # reports every config problem at once, runs nothing
+onecheck paths             # where the config, log, state, results and events are
 onecheck                   # run all rules; same as "onecheck run"
 onecheck --only-failed     # print only what is wrong
 onecheck -o json           # machine-readable output

@@ -26,17 +26,32 @@ func (c *Config) EventsDir() string { return c.Paths.Events }
 // LogFile is this config's log file.
 func (c *Config) LogFile() string { return filepath.Join(c.Log.Dir, c.Name, "onecheck.log") }
 
+// Where a config file was found, as reported by Locate.
+const (
+	SourceFlag    = "--config"
+	SourceEnv     = "ONECHECK_CONFIG"
+	SourceDefault = "default location"
+)
+
 // Find returns the config file to use: the explicit path, $ONECHECK_CONFIG,
 // /etc/onecheck/config.yaml, then $HOME/.config/onecheck/config.yaml.
 func Find(flag string) (string, error) {
-	if flag == "" {
-		flag = os.Getenv("ONECHECK_CONFIG")
+	path, _, err := Locate(flag)
+	return path, err
+}
+
+// Locate is Find that also says where the config came from: SourceFlag,
+// SourceEnv or SourceDefault.
+func Locate(flag string) (path, source string, err error) {
+	path, source = flag, SourceFlag
+	if path == "" {
+		path, source = os.Getenv("ONECHECK_CONFIG"), SourceEnv
 	}
-	if flag != "" {
-		if _, err := os.Stat(flag); err != nil {
-			return "", fmt.Errorf("config file %s: %w", flag, err)
+	if path != "" {
+		if _, err := os.Stat(path); err != nil {
+			return "", "", fmt.Errorf("config file %s: %w", path, err)
 		}
-		return flag, nil
+		return path, source, nil
 	}
 	candidates := []string{systemConfig}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -44,14 +59,14 @@ func Find(flag string) (string, error) {
 	}
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {
-			return path, nil
+			return path, SourceDefault, nil
 		}
 	}
 	msg := "no config file found; looked in:"
 	for _, path := range candidates {
 		msg += "\n  " + path
 	}
-	return "", fmt.Errorf("%s\nuse --config <path> or set ONECHECK_CONFIG", msg)
+	return "", "", fmt.Errorf("%s\nuse --config <path> or set ONECHECK_CONFIG", msg)
 }
 
 // defaultConfig returns a config with every default applied. Root gets

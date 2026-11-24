@@ -173,7 +173,7 @@ func TestHelpListsCommands(t *testing.T) {
 	if code != 0 {
 		t.Errorf("code = %d", code)
 	}
-	for _, want := range []string{"run", "validate", "version", "--config", "--log-level", "--only-failed", "Exit codes", "/etc/onecheck/config.yaml"} {
+	for _, want := range []string{"run", "validate", "paths", "version", "--config", "--log-level", "--only-failed", "Exit codes", "/etc/onecheck/config.yaml"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)
 		}
