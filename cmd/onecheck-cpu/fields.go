@@ -30,11 +30,12 @@ func parseWindow(s string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid params: window %q: %w", s, err)
 	}
-	d := time.Duration(math.Round(secs * float64(time.Second)))
-	if d < minWindow || d > maxWindow {
+	// Compare in seconds first: converting a huge or infinite value to a
+	// Duration would overflow.
+	if !(secs >= minWindow.Seconds() && secs <= maxWindow.Seconds()) {
 		return 0, fmt.Errorf("invalid params: window %q must be from 100ms to 5m", s)
 	}
-	return d, nil
+	return time.Duration(math.Round(secs * float64(time.Second))), nil
 }
 
 // usageFields computes CPU usage between two samples of the summed CPU

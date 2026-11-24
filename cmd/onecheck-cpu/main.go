@@ -13,7 +13,7 @@ const paramsSchema = `{
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "window": {"type": "string", "minLength": 1, "description": "how long CPU usage is measured, e.g. 500ms, 5s; default 1s, from 100ms to 5m"}
+    "window": {"type": ["string", "number"], "minLength": 1, "description": "how long CPU usage is measured, e.g. 500ms, 5s; default 1s, from 100ms to 5m"}
   }
 }`
 

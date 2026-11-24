@@ -11,14 +11,17 @@ services slow down. Works on Linux and macOS.
 | `window` | no | how long CPU usage is measured: `500ms`, `5s`, `1m`, or a bare number of seconds; default `1s`; from `100ms` to `5m` |
 
 CPU usage is the difference of two readings of the CPU counters: the module
-reads them, waits `window`, and reads them again. The window must be shorter
-than the rule's `timeout` (default 30s), otherwise the module is killed and
-the rule is an `error`. A longer window smooths short bursts; for sustained
-load combine a short window with `fail_after` (see
+reads them, waits `window`, and reads them again. Write the window quoted or
+not: `window: 5s`, `window: 5`.
+
+The window must be shorter than the rule's `timeout` (default 30s);
+otherwise the rule is an `error` at once, without waiting, telling you to
+shorten the window or raise `timeout`. A longer window smooths short bursts;
+for sustained load combine a short window with `fail_after` (see
 [state-and-events.md](../state-and-events.md#thresholds-fail_after-pass_after)).
 
-The module waits only when a `*_percent` field is checked (or saved as
-output). A rule that checks only load average answers immediately.
+The module waits only when a `*_percent` field is checked. A rule that
+checks only load average answers immediately.
 
 ## Fields
 
@@ -27,7 +30,7 @@ one core fully busy shows 25), two decimals:
 
 | Field | Type | Description |
 |---|---|---|
-| `usage_percent` | number | busy time: everything except idle and iowait |
+| `usage_percent` | number | busy time: everything except idle and iowait (steal counts as busy) |
 | `user_percent` | number | programs (user and nice time) |
 | `system_percent` | number | kernel (system, irq and softirq time) |
 | `iowait_percent` | number | idle while waiting for disk; **Linux only** |
@@ -43,8 +46,10 @@ Without waiting:
 
 ### Which field to use
 
-- **CPU busy:** `usage_percent`. A high `steal_percent` on a virtual machine
-  means the hypervisor is short of CPU, not your programs.
+- **CPU busy:** `usage_percent`. It includes steal time, so on a virtual
+  machine a high `usage_percent` with a high `steal_percent` means the
+  hypervisor is short of CPU, not your programs; check
+  `user_percent`/`system_percent` for what your programs use.
 - **Load:** prefer `*_per_core` to `load*`: the same threshold then fits
   hosts with any number of cores. Load above 1 per core means work is
   waiting for a CPU. `load5`/`load15` react slower and ignore short spikes.
@@ -57,8 +62,9 @@ Which fields are present:
 - `iowait_percent` and `steal_percent` are missing on macOS, which does not
   report these times; a condition on them fails with "got nothing (path is
   missing)".
-- `*_percent` fields are missing when no rule condition or saved output asks
-  for them.
+- `*_percent` fields are missing when no rule condition asks for them.
+  On macOS a rule that checks only `iowait_percent`/`steal_percent` does
+  not wait the window.
 
 Inside a container the module reports the host's CPUs and load, not the
 container's limits.

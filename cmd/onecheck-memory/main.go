@@ -24,7 +24,7 @@ var mod = module.Module{
 		Fields: map[string]module.FieldInfo{
 			"total":             {Type: module.TypeBytes, Description: "physical memory"},
 			"available":         {Type: module.TypeBytes, Description: "memory that can be given to programs without swapping"},
-			"used":              {Type: module.TypeBytes, Description: "total minus available; reclaimable page cache is not counted"},
+			"used":              {Type: module.TypeBytes, Description: "total minus available; on Linux reclaimable page cache is not counted"},
 			"used_percent":      {Type: module.TypeNumber, Description: "used / total * 100"},
 			"swap_total":        {Type: module.TypeBytes, Description: "swap size; grows and shrinks on macOS"},
 			"swap_used":         {Type: module.TypeBytes, Description: "swap in use"},

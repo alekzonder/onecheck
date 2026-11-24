@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -40,8 +41,15 @@ var (
 	}
 )
 
+// linux is whether the CPU reports iowait and steal time.
+var linux = runtime.GOOS == "linux"
+
+// linuxOnly are percent fields that exist only on Linux.
+var linuxOnly = map[string]bool{"iowait_percent": true, "steal_percent": true}
+
 type params struct {
-	Window string `json:"window"`
+	// Window is a duration string or a bare number of seconds.
+	Window any `json:"window"`
 }
 
 func collect(ctx context.Context, req module.Request) (map[string]any, error) {
@@ -49,7 +57,17 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	if err := module.DecodeParams(req.Params, &p); err != nil {
 		return nil, err
 	}
-	window, err := parseWindow(p.Window)
+	var s string
+	switch v := p.Window.(type) {
+	case nil:
+	case string:
+		s = v
+	case float64:
+		s = strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		return nil, fmt.Errorf("invalid params: window must be a duration such as 5s or a number of seconds, got %v", v)
+	}
+	window, err := parseWindow(s)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +95,9 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 // asked for. Waiting is not cheap, so an empty field list skips it.
 func wantsUsage(req module.Request) bool {
 	for _, f := range percentFields {
+		if linuxOnly[f] && !linux {
+			continue
+		}
 		if req.WantsOr(f, false) {
 			return true
 		}
@@ -86,6 +107,11 @@ func wantsUsage(req module.Request) bool {
 
 // measure samples CPU times twice, window apart.
 func measure(ctx context.Context, window time.Duration) (map[string]any, error) {
+	if dl, ok := ctx.Deadline(); ok {
+		if left := time.Until(dl); left <= window {
+			return nil, fmt.Errorf("invalid params: window %v is not shorter than the rule timeout (%v left); shorten the window or raise timeout", window, left.Round(time.Millisecond))
+		}
+	}
 	a, err := cpuTimes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read CPU times: %w", err)
@@ -97,5 +123,5 @@ func measure(ctx context.Context, window time.Duration) (map[string]any, error) 
 	if err != nil {
 		return nil, fmt.Errorf("read CPU times: %w", err)
 	}
-	return usageFields(a, b, runtime.GOOS == "linux"), nil
+	return usageFields(a, b, linux), nil
 }

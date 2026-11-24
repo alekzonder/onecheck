@@ -23,11 +23,17 @@ None. `params` may be omitted.
 
 Percentages have two decimals.
 
-`used` does not count memory that the system can reclaim at once (page
-cache, inactive pages), as `free` ("available" column) and Activity Monitor
-do. A host with a large file cache therefore shows low `used_percent` even
-though little memory is "free"; that is normal. On Linux `available` is the
-kernel's `MemAvailable`; on macOS it is free plus inactive memory.
+On Linux `available` is the kernel's `MemAvailable`: page cache and other
+memory the kernel can reclaim at once are not counted in `used`, as in the
+"available" column of `free`. A host with a large file cache therefore
+shows low `used_percent` even though little memory is "free"; that is
+normal.
+
+On macOS `available` is free plus inactive memory. `used` then still
+includes active file cache and compressed and wired memory, so it reads
+higher than "Memory Used" in Activity Monitor, often 75–90 % on an idle Mac.
+On Macs prefer a threshold on `available` (`available: { gt: 2GB }`) or a
+higher `used_percent` limit.
 
 macOS has no fixed swap: it adds swap files as needed, so `swap_total`
 grows and shrinks, and a high `swap_used_percent` there is less alarming

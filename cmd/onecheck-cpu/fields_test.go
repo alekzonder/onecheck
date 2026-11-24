@@ -85,7 +85,7 @@ func TestParseWindow(t *testing.T) {
 			t.Errorf("parseWindow(%q) = %v, %v; want %v", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"50ms", "5m1s", "0", "abc", "-1s", "10m"} {
+	for _, in := range []string{"50ms", "5m1s", "0", "abc", "-1s", "10m", "Inf", "1e10"} {
 		_, err := parseWindow(in)
 		if err == nil || !strings.Contains(err.Error(), in) {
 			t.Errorf("parseWindow(%q) err = %v, want an error naming the value", in, err)

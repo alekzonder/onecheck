@@ -179,3 +179,40 @@ func TestDescribeListsFields(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectBareNumberWindow(t *testing.T) {
+	f := fakeSystem(t)
+	if _, err := run(t, map[string]any{"window": 2}, "usage_percent"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.slept) != 1 || f.slept[0] != 2*time.Second {
+		t.Errorf("slept %v, want 2s", f.slept)
+	}
+}
+
+func TestCollectWindowNotShorterThanTimeoutIsError(t *testing.T) {
+	f := fakeSystem(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	raw, _ := json.Marshal(map[string]any{"window": "5s"})
+	_, err := collect(ctx, module.Request{Params: raw, Fields: []string{"usage_percent"}})
+	if err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("err = %v", err)
+	}
+	if len(f.slept) != 0 {
+		t.Errorf("slept %v, want an error before waiting", f.slept)
+	}
+}
+
+func TestCollectLinuxOnlyFieldsDoNotWaitElsewhere(t *testing.T) {
+	f := fakeSystem(t)
+	old := linux
+	t.Cleanup(func() { linux = old })
+	linux = false
+	if _, err := run(t, nil, "iowait_percent", "steal_percent"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.slept) != 0 {
+		t.Errorf("slept %v; iowait and steal do not exist off Linux", f.slept)
+	}
+}

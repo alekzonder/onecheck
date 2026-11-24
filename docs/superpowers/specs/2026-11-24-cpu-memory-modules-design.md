@@ -51,7 +51,8 @@ binaries still build with `CGO_ENABLED=0` for every release platform
 |---|---|---|
 | `window` | no | how long CPU usage is measured: an onecheck duration (`500ms`, `5s`, `1m`); default `1s`; from `100ms` to `5m` |
 
-`window` is a string parsed with `internal/units.ParseDuration` (a bare
+`window` is a string or a bare number of seconds (both accepted after the
+final review), parsed with `internal/units.ParseDuration` (a bare
 number is seconds), validated in the module: out of range or unparsable is
 an `error` naming the value. The window must be shorter than the rule's
 `timeout` (default 30s), otherwise the core kills the module; the docs say
