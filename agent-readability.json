@@ -1,0 +1,21 @@
+{
+  "artifacts": {
+    "markdown": {
+      "contentNegotiation": "text/markdown",
+      "pattern": "https://alekzonder.github.io/onecheck/{route}.md"
+    },
+    "llmsFullTxt": "https://alekzonder.github.io/onecheck/llms-full.txt",
+    "llmsTxt": "https://alekzonder.github.io/onecheck/llms.txt",
+    "sitemap": "https://alekzonder.github.io/onecheck/sitemap.xml"
+  },
+  "description": "Simple, scriptable health checks for a server: YAML rules, cron, exit codes, result files and an event queue.",
+  "generator": "blume@1.0.4",
+  "name": "onecheck",
+  "site": "https://alekzonder.github.io",
+  "contentUsage": {
+    "search": true,
+    "ai-input": true,
+    "ai-train": true
+  },
+  "repository": "https://github.com/alekzonder/onecheck"
+}

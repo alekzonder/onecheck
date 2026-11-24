@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://alekzonder.github.io/onecheck/checks</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/configuration</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/development</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/getting-started</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/logging-and-logrotate</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/module-management</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/module-protocol</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/command</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/cpu</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/disk</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/docker</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/file</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/http</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/memory</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/ports</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/modules/systemd</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/output-and-results</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck/state-and-events</loc></url>
+  <url><loc>https://alekzonder.github.io/onecheck</loc></url>
+</urlset>

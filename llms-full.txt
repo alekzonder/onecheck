@@ -1,0 +1,3520 @@
+# onecheck
+
+> Simple, scriptable health checks for a server: YAML rules, cron, exit codes, result files and an event queue.
+
+# onecheck
+Source: https://alekzonder.github.io/onecheck
+
+Simple, scriptable health checks for a server. You describe checks in YAML,
+cron (or a systemd timer) runs `onecheck`, and onecheck tells you what is
+broken: by exit code, on stdout (text or JSON), in per-rule result files, and
+through an event queue that records every pass → fail and fail → pass change.
+
+```console
+$ onecheck -c /etc/onecheck/config.yaml
+PASS   passwd-sane   (file, 2ms)
+FAIL   api-health    (http, 124ms)  [transition: fail]
+       body json status: expected equals "ok", got "degraded"
+PASS   nginx-active  (command, 9ms)
+
+3 rules: 2 passed, 1 failed, 0 errors
+$ echo $?
+1
+```
+
+## How it works
+
+- **Modules collect, onecheck decides.** A check type (`file`, `http`,
+  `command`, `disk`, `systemd`, `cpu`, `memory`, `docker`, `ports`, ...) is a
+  separate executable, `onecheck-<name>`, living in a modules directory. A
+  module only returns values (status code, file size, stdout, ...). All
+  comparisons are done by one engine inside onecheck, so every operator works
+  the same for every module.
+- **Modules are picked up dynamically.** onecheck looks into the modules
+  directory on every run. Install a module and the next run can use it.
+- **State is tracked for you.** For every rule onecheck remembers the
+  confirmed state and how many runs in a row passed or failed. With
+  `fail_after: 3` a rule must fail three times in a row before it is
+  considered failed. Each confirmed change is written as a JSON event for a
+  notification service to pick up.
+
+## Quick start
+
+```sh
+# 1. install the latest onecheck and the bundled modules
+curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh | sh
+
+# 2. write a config
+mkdir -p /etc/onecheck && cat > /etc/onecheck/config.yaml <<'YAML'
+name: main
+rules:
+  - name: site-up
+    module: http
+    params: { url: https://example.com/ }
+    check:
+      status: 200
+      body: { contains: "Example Domain" }
+YAML
+
+# 3. check the config, then run it
+onecheck validate
+onecheck
+```
+
+[Getting started](/getting-started) walks through installation, the first
+config and scheduling with cron or systemd.
+
+## Documentation
+
+| | |
+|---|---|
+| [Getting started](/getting-started) | install, first config, cron and systemd |
+| [Configuration](/configuration) | every config key, includes, defaults |
+| [Checks](/checks) | the `check` block: paths, all operators, JSON and JSON Schema |
+| Modules | [file](/modules/file), [http](/modules/http), [command](/modules/command), [disk](/modules/disk), [systemd](/modules/systemd), [cpu](/modules/cpu), [memory](/modules/memory), [docker](/modules/docker), [ports](/modules/ports) |
+| [State and events](/state-and-events) | `fail_after` / `pass_after`, the event queue contract |
+| [Output and results](/output-and-results) | exit codes, text and JSON output, result files |
+| [Module management](/module-management) | search, install, update, remove, self-update |
+| [Logging and logrotate](/logging-and-logrotate) | log files, levels, rotation, event cleanup |
+| [Module protocol](/module-protocol) | write your own module, in any language |
+| [Development](/development) | build, test, release |
+
+`onecheck --help` and `onecheck <command> --help` describe every command and
+flag. The source is on [GitHub](https://github.com/alekzonder/onecheck).
+
+---
+
+# Checks
+Source: https://alekzonder.github.io/onecheck/checks
+
+# Checks
+
+The `check` block of a rule says what must be true about the values a module
+returned. It is evaluated by onecheck itself, by one engine, so everything on
+this page works the same for every module: bundled or third-party.
+
+```yaml
+rules:
+  - name: api-health
+    module: http
+    params: { url: https://example.com/health }
+    check:
+      status: 200                                  # field: condition
+      headers.content-type: { contains: json }     # path into a field
+      body:
+        json:
+          assert:
+            - { path: status, equals: ok }
+```
+
+A rule **passes** when every condition holds. Each condition that does not
+hold is reported separately, with what was expected and what was found:
+
+```
+body json status: expected equals "ok", got "degraded"
+```
+
+A rule without `check` passes whenever its module could collect the data.
+
+## Paths
+
+Each key of `check` is a path to a value. The first part is a field of the
+module (see the module's page for its fields); further parts go into objects
+and arrays:
+
+| Path | Meaning |
+|---|---|
+| `status` | the field `status` |
+| `headers.content-type` | key `content-type` of the object field `headers` |
+| `items.0` | first element of an array |
+| `items.#` | number of elements of an array |
+
+Paths use [GJSON path syntax](https://github.com/tidwall/gjson/blob/master/SYNTAX.md).
+A key that itself contains a dot is written with a backslash: `headers.x\.y`.
+
+A field that does not exist for the module is a config error, caught by
+`onecheck validate`.
+
+## Conditions
+
+A condition is one of:
+
+- **a plain value** — shorthand for `equals`:
+
+  ```yaml
+  status: 200          # same as  status: { equals: 200 }
+  exists: true
+  ```
+
+- **a mapping of operators** — all of them must hold:
+
+  ```yaml
+  size: { gt: 0, lt: 10MB }
+  ```
+
+- **a combinator** — `all`, `any`, `not`, described [below](#combining-conditions).
+
+To compare with an object, use `equals` explicitly, because a bare mapping is
+read as operators.
+
+## Operators
+
+| Operator | Applies to | Holds when |
+|---|---|---|
+| [`equals`](#equals-not_equals) / `not_equals` | anything | the value is (not) exactly this |
+| [`contains`](#contains-not_contains) / `not_contains` | string, array, object | substring / element / key is (not) present |
+| [`starts_with`](#starts_with-ends_with) / `ends_with` | string | the string starts / ends with this |
+| [`matches`](#matches-not_matches) / `not_matches` | string | the regular expression matches (does not match) |
+| [`glob`](#glob-not_glob) / `not_glob` | string | the whole string matches (does not match) a shell pattern |
+| [`gt`, `gte`, `lt`, `lte`](#gt-gte-lt-lte) | number | greater / greater-or-equal / less / less-or-equal |
+| [`in`](#in-not_in) / `not_in` | anything | the value is (not) one of the list |
+| [`exists`](#exists) | anything | the path is present (`true`) or absent (`false`) |
+| [`type`](#type) | anything | the value has this JSON type |
+| [`length`](#length) | string, array, object | a nested condition holds for the length |
+| [`every`](#every-some) / `some` | array | a nested condition holds for each / at least one element |
+| [`path`](#path) | anything | the other operators apply to a value inside this one |
+| [`json`](#json) | string | the string is JSON and satisfies `assert` / `schema` |
+
+An operator applied to a value of the wrong type (for example `gt` on a
+string) does not hold, and the message says which type was found. An unknown
+operator or a malformed argument is a config error.
+
+### `equals`, `not_equals`
+
+Exact comparison of JSON values. There is no conversion between types: the
+number `200` is not equal to the string `"200"`.
+
+```yaml
+status: { equals: 200 }
+mode: { equals: "0644" }           # quote it: mode is a string
+exists: { equals: true }
+headers.x-env: { not_equals: staging }
+tags: { equals: [a, b] }           # arrays and objects compare as a whole
+```
+
+### `contains`, `not_contains`
+
+```yaml
+body: { contains: "status: ok" }       # string: substring
+stdout: { not_contains: ERROR }
+roles: { contains: admin }             # array: has an element equal to this
+headers: { contains: x-request-id }    # object: has this key
+```
+
+### `starts_with`, `ends_with`
+
+```yaml
+headers.content-type: { starts_with: application/json }
+target: { ends_with: .conf }
+```
+
+### `matches`, `not_matches`
+
+Regular expressions in [Go RE2 syntax](https://pkg.go.dev/regexp/syntax). The
+expression may match anywhere in the string; anchor it with `^` and `$` for a
+full match.
+
+```yaml
+stdout: { matches: 'version \d+\.\d+' }
+body: { not_matches: '(?i)exception|traceback' }     # (?i): ignore case
+```
+
+Command output usually ends with a newline, and `$` only matches at the very
+end of the text. Use the multi-line flag `(?m)` to let `^` and `$` match at
+line boundaries:
+
+```yaml
+stdout: { matches: '(?m)^active$' }
+```
+
+Write regular expressions in single quotes so YAML leaves backslashes alone.
+
+### `glob`, `not_glob`
+
+Shell patterns, matched against the **whole** string, case-sensitive:
+
+| Pattern | Matches |
+|---|---|
+| `*` | any run of characters, including `/` and none at all |
+| `?` | exactly one character |
+| `[abc]`, `[a-z]` | one character from the set or range |
+| `[!abc]` | one character not in the set |
+
+Everything else is literal: `.` is a dot, `+` is a plus.
+
+```yaml
+image: { glob: "registry.local/*" }      # any image from this registry
+name: { not_glob: "tmp-*" }
+```
+
+Quote patterns that start with `*` or `[`: YAML reads those characters
+specially.
+
+### `gt`, `gte`, `lt`, `lte`
+
+Numeric comparison.
+
+```yaml
+status: { gte: 200, lt: 300 }
+exit_code: { lte: 1 }
+```
+
+Fields that hold a size or a time span accept literals with units. The
+module's page marks such fields as **bytes** or **duration**:
+
+```yaml
+size: { lt: 10MB }             # B, KB, MB, GB, TB (1024-based)
+age: { lt: 1h }                # ms, s, m, h, d, w; also 1h30m
+duration: { lte: 500ms }
+tls_expires_in: { gt: 14d }
+```
+
+Unit literals work for `equals`, `not_equals`, `in`, `not_in` too, and only
+directly on such a field (not on values inside JSON).
+
+### `in`, `not_in`
+
+```yaml
+status: { in: [200, 204, 304] }
+type: { not_in: [symlink, other] }
+```
+
+### `exists`
+
+Whether the path is present at all. Use it for optional keys and for the
+absence of something:
+
+```yaml
+headers.strict-transport-security: { exists: true }
+headers.x-debug-token: { exists: false }
+```
+
+`exists` is the only operator that can hold for an absent path; see
+[Missing values](#missing-values).
+
+> The `file` module also has a *field* named `exists` (does the file exist).
+> `check: { exists: true }` compares that field; it is the plain-value
+> shorthand, not this operator.
+
+### `type`
+
+One of `string`, `number`, `bool`, `object`, `array`, `null`.
+
+```yaml
+headers: { type: object }
+body:
+  json:
+    assert:
+      - { path: items, type: array }
+      - { path: deleted_at, type: "null" }     # quote null
+```
+
+### `length`
+
+Applies a nested condition to the length of a string (in characters), an
+array (elements) or an object (keys). A plain number means `equals`.
+
+```yaml
+stdout: { length: { gt: 0 } }          # not empty
+body: { length: { lte: 4096 } }
+items: { length: 3 }
+```
+
+### `every`, `some`
+
+Apply a condition to the elements of an array. The argument is a condition;
+a list of conditions means all of them.
+
+```yaml
+containers:
+  every:                                   # each element must satisfy all
+    - { path: state, equals: running }
+    - { path: restart_count, lt: 5 }
+tags: { some: { glob: "env-*" } }          # at least one element
+```
+
+| | holds when | empty array |
+|---|---|---|
+| `every` | the condition holds for each element | holds |
+| `some` | the condition holds for at least one element | does not hold |
+
+A value that is not an array, or a missing path, does not hold.
+
+`every` reports each failing element separately, with its index in the
+path. For an element that is an object the message also shows its simple
+keys (strings, numbers, booleans; nested objects such as labels are left
+out), so you see which element it was:
+
+```
+containers.2.state: expected equals "running", got "exited" (element {"id":"3f2a…","name":"old","state":"exited",...})
+containers.#(state=="running")#.1: expected any [...], got {"id":"9c1e…","image":"xmrig/xmrig","name":"miner",...}
+```
+
+The index counts elements of the array the condition is applied to; after a
+query such as `#(state=="running")#` that is the filtered array.
+
+`some` reports one failure with the whole array.
+
+Combine with a [GJSON query](#paths) to pick elements first, for example only
+running containers:
+
+```yaml
+containers.#(state=="running")#:
+  every:
+    any:
+      - { path: name,  in: [nginx, postgres] }
+      - { path: image, glob: "registry.local/*" }
+```
+
+A query that matches nothing gives an empty array: `every` holds, `some`
+does not.
+
+### `path`
+
+Inside any condition mapping, `path` moves the other operators of that
+mapping to a value inside the current one. It is how conditions reach the
+fields of array elements:
+
+```yaml
+containers.0: { path: state, equals: running }   # same as containers.0.state: running
+```
+
+`path` uses the same [GJSON syntax](#paths) as check keys and needs at least
+one operator next to it. A missing sub-path is handled like any
+[missing value](#missing-values). Unit literals (`10MB`, `1h`) do not apply
+under `path`: compare with plain numbers.
+
+### `json`
+
+Parses a string field as JSON and checks the document. It works on any string
+field: an HTTP `body`, a command's `stdout`, a file's `content`. A string that
+is not valid JSON does not hold.
+
+```yaml
+body:
+  json:
+    assert:      # optional: list of path + operators
+      - { path: status, equals: ok }
+    schema:      # optional: a JSON Schema
+      type: object
+      required: [status]
+```
+
+At least one of `assert` and `schema` is required; both may be used together.
+
+#### `json.assert`
+
+A list of assertions. Each has a `path` into the parsed document and any of
+the operators above (several operators on one line are ANDed):
+
+```yaml
+body:
+  json:
+    assert:
+      - { path: status, equals: ok }
+      - { path: version, matches: '^2\.' }
+      - { path: data.items, type: array }
+      - { path: data.items.#, gte: 1 }                   # at least one item
+      - { path: data.items.0.id, type: number }
+      - { path: data.user.email, exists: true }
+      - { path: error, exists: false }
+      - { path: 'data.items.#(state=="failed")#', length: 0 }   # no failed items
+      - { path: 'data.items.#.name', contains: primary }        # some item is named primary
+      - path: latency_ms
+        any:
+          - { lt: 100 }
+          - { equals: null }
+```
+
+Paths are [GJSON paths](https://github.com/tidwall/gjson/blob/master/SYNTAX.md):
+
+| Path | Selects |
+|---|---|
+| `a.b.c` | nested keys |
+| `items.0` | array element by index |
+| `items.#` | number of elements |
+| `items.#.name` | the `name` of every element, as an array |
+| `items.#(state=="ok")` | first element whose `state` is `ok` |
+| `items.#(state=="ok")#` | all such elements, as an array |
+| `items.#(size>100)#.name` | names of all elements with `size` over 100 |
+
+#### `json.schema`
+
+A [JSON Schema](https://json-schema.org/) (draft 2020-12) written in YAML.
+Use it when the *shape* of the document matters: required keys, types,
+enumerations, formats of nested objects.
+
+```yaml
+body:
+  json:
+    schema:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { enum: [ok, degraded] }
+        checks:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [name, state]
+            properties:
+              state: { enum: [ok] }
+```
+
+Every schema violation becomes its own failure, with the location inside the
+document:
+
+```
+body json /checks/1/state: schema violation: value must be 'ok'
+```
+
+`assert` is shorter for "this key has this value"; `schema` is better for
+structure. They combine freely.
+
+## Combining conditions
+
+Operators written side by side are ANDed. For other logic use combinators;
+they nest to any depth.
+
+```yaml
+# any: at least one must hold
+status:
+  any:
+    - { equals: 200 }
+    - { equals: 304 }
+
+# all: every one must hold (same as writing the operators side by side,
+# but allows the same operator twice)
+body:
+  all:
+    - { contains: "db: ok" }
+    - { contains: "cache: ok" }
+
+# not: must not hold
+stdout:
+  not: { matches: '(?i)error|fatal' }
+
+# nested
+body:
+  any:
+    - { contains: "status: ok" }
+    - all:
+        - { contains: "status: degraded" }
+        - not: { contains: "db: down" }
+```
+
+When `any` does not hold, one failure is reported for the whole `any`.
+
+## Missing values
+
+A path can be absent: an optional header, a key that is not in the JSON, a
+field the module does not return in this situation (the `file` module returns
+no `size` for a file that does not exist).
+
+For an absent path **every operator fails**, including the negative ones
+(`not_equals`, `not_contains`, `not_matches`, `not_in`) and `not: {...}`. The
+only exceptions are `exists: false` and a `not` around `exists`. The message
+says `got nothing (path is missing)`.
+
+The reason: missing data must never make a check pass by accident. If an API
+stops returning the key you are watching, the check fails instead of going
+quiet. When absence is acceptable, say so explicitly:
+
+```yaml
+- path: error
+  any:
+    - { exists: false }
+    - { equals: null }
+```
+
+An explicit JSON `null` is a present value: `exists: true` holds, and so does
+`type: "null"`.
+
+## Large values
+
+A module returns at most `run.max_field_size` (default `10MB`) per field.
+When a condition uses a field that had to be cut, the rule ends with the
+status `error` rather than passing or failing on partial data. Raise the
+limit, or check something smaller (a file's `size` instead of its `content`).
+
+## Recipes
+
+```yaml
+# a file exists, is not empty, and is fresh
+check:
+  exists: true
+  size: { gt: 0 }
+  age: { lt: 25h }
+
+# a file must NOT exist
+check:
+  exists: false
+
+# a JSON config file has a value
+check:
+  content:
+    json:
+      assert:
+        - { path: db.host, equals: localhost }
+
+# HTTP: status, header, body substring, response time
+check:
+  status: { in: [200, 204] }
+  headers.content-type: { starts_with: application/json }
+  body: { contains: '"healthy":true' }
+  duration: { lt: 1s }
+
+# TLS certificate valid for at least two more weeks
+check:
+  tls_expires_in: { gt: 14d }
+
+# command: exit code and a number parsed from output
+check:
+  exit_code: 0
+  stdout:
+    json:
+      assert:
+        - { path: queue.length, lt: 1000 }
+
+# command output has no error lines and is not empty
+check:
+  stdout:
+    length: { gt: 0 }
+    not_matches: '(?im)^error'
+```
+
+---
+
+# Configuration
+Source: https://alekzonder.github.io/onecheck/configuration
+
+# Configuration
+
+The config is YAML. Unknown keys are errors, so a typo never goes unnoticed.
+Check a config without running it: `onecheck validate -c <file>`.
+
+## Full reference
+
+```yaml
+name: main                    # REQUIRED. [a-z0-9][a-z0-9_.-]*
+
+log:
+  level: info                 # debug | info | warn | error
+  dir: /var/log/onecheck      # log file: <dir>/<name>/onecheck.log
+  format: text                # text | json
+  rotate:                     # rules for "onecheck logrotate"
+    max_size: 10MB            # rotate when the log is larger
+    keep: 5                   # rotated files to keep
+    max_age: 30d              # remove rotated files older than this
+    compress: true            # gzip rotated files
+
+paths:
+  modules: /usr/lib/onecheck/modules   # where onecheck-<name> executables live
+  results: /var/lib/onecheck/results   # results go to <results>/<name>/
+  events:  /var/lib/onecheck/events    # event queue, shared by all configs
+  state:   /var/lib/onecheck/state     # state goes to <state>/<name>/
+
+include:                      # more rule files (globs)
+  - conf.d/*.yaml
+
+events:
+  ttl: 24h                    # lifetime of an event in the queue
+
+run:
+  parallel: 4                 # checks running at the same time
+  max_field_size: 10MB        # largest single value a module may return
+
+defaults:                     # used by rules that do not set the key
+  timeout: 30s
+  fail_after: 1
+  pass_after: 1
+  output_tail: 10k            # how much module output is kept in a result
+
+modules:
+  repos:                      # default repositories for "onecheck module search"
+    - alekzonder/onecheck
+
+rules:
+  - name: api-health          # REQUIRED, unique. [a-z0-9][a-z0-9_.-]*
+    module: http              # REQUIRED. module name: [a-z0-9][a-z0-9_-]*
+    enabled: true             # false: the rule is skipped
+    tags: [api, web]          # for "onecheck run --tag"
+    timeout: 10s              # the module is killed after this
+    fail_after: 3             # consecutive failures before state "fail"
+    pass_after: 2             # consecutive passes before state "pass" again
+    output_tail: 1k           # output kept in the result; 0 keeps none
+    params:                   # input of the module, see docs/modules/
+      url: https://example.com/health
+    check:                    # conditions, see docs/checks.md
+      status: 200
+```
+
+Every key except `name` is optional; the values above are the defaults for
+root. Sizes accept `B`, `KB`, `MB`, `GB`, `TB` (1024-based); durations accept
+`ms`, `s`, `m`, `h`, `d`, `w` and combinations such as `1h30m`.
+
+## `name`
+
+The name is required and keeps configs on the same host apart:
+
+- results: `<paths.results>/<name>/<rule>.json`
+- state and run lock: `<paths.state>/<name>/`
+- log: `<log.dir>/<name>/onecheck.log`
+
+Rule names only have to be unique within one config. The event queue
+(`paths.events`) is shared by all configs; every event carries the config
+name.
+
+Two different config files must not use the same name: onecheck remembers
+which file owns a name and refuses to run the second one (exit code `2`).
+If you move or rename a config file and keep its name, delete
+`<paths.state>/<name>/.owner` once; the next run records the new location.
+
+## Default paths
+
+| | root | other users |
+|---|---|---|
+| `log.dir` | `/var/log/onecheck` | `$HOME/.local/state/onecheck/log` |
+| `paths.modules` | `/usr/lib/onecheck/modules` | `$HOME/.local/lib/onecheck/modules` |
+| `paths.results` | `/var/lib/onecheck/results` | `$HOME/.local/state/onecheck/results` |
+| `paths.events` | `/var/lib/onecheck/events` | `$HOME/.local/state/onecheck/events` |
+| `paths.state` | `/var/lib/onecheck/state` | `$HOME/.local/state/onecheck/state` |
+
+Relative paths in the config are resolved against the directory of the config
+file.
+
+onecheck creates these directories with mode `0750` and the files in them
+(results, state, events, logs) with mode `0640`. Results and events can
+contain pieces of what was checked, such as file content or command output,
+so they are not readable by everyone. To let another service read results or
+events, put its user into the group owning the directories.
+
+## Where everything is: `onecheck paths`
+
+`onecheck paths` prints the full path of everything onecheck reads and writes
+for the config it would use, so the paths do not have to be worked out from
+the tables above:
+
+```
+$ onecheck paths
+config    /etc/onecheck/config.yaml  (from default location)
+name      main
+include   /etc/onecheck/conf.d/api.yaml
+include   /etc/onecheck/conf.d/db.yaml
+log       /var/log/onecheck/main/onecheck.log
+state     /var/lib/onecheck/state/main
+results   /var/lib/onecheck/results/main
+events    /var/lib/onecheck/events  (missing)
+modules   /usr/lib/onecheck/modules
+binary    /usr/local/lib/onecheck/versions/0.1.2/onecheck
+```
+
+| Line | Meaning |
+|---|---|
+| `config` | the config file and how it was found: `--config`, `ONECHECK_CONFIG` or `default location` |
+| `name` | the config's `name`; it is part of the log, state and results paths |
+| `include` | every include file that was read, in reading order |
+| `log` | the log file, see [Logging and logrotate](/logging-and-logrotate) |
+| `state` | the confirmed state of each rule, see [State and events](/state-and-events#files) |
+| `results` | the latest result of each rule |
+| `events` | the event queue, shared by all configs on the host |
+| `modules` | where modules are looked for |
+| `binary` | the onecheck executable itself, with symlinks resolved |
+
+`(missing)` marks a path that does not exist yet. The log, state, results and
+events paths are created by the first run, so they are missing on a fresh
+install.
+
+The command changes nothing, does not need the modules to be installed and
+works with rules that are broken. If the config file is found but cannot be
+loaded, its path is still printed, followed by the error, and the exit code
+is `2`.
+
+`onecheck paths --json` prints the same for scripts:
+
+```json
+{
+  "name": "main",
+  "config": { "path": "/etc/onecheck/config.yaml", "exists": true, "source": "default location" },
+  "includes": [
+    { "path": "/etc/onecheck/conf.d/api.yaml", "exists": true }
+  ],
+  "log": { "path": "/var/log/onecheck/main/onecheck.log", "exists": true },
+  "state": { "path": "/var/lib/onecheck/state/main", "exists": true },
+  "results": { "path": "/var/lib/onecheck/results/main", "exists": true },
+  "events": { "path": "/var/lib/onecheck/events", "exists": false },
+  "modules": { "path": "/usr/lib/onecheck/modules", "exists": true },
+  "binary": { "path": "/usr/local/lib/onecheck/versions/0.1.2/onecheck", "exists": true }
+}
+```
+
+## Includes (`conf.d/`)
+
+```yaml
+include:
+  - conf.d/*.yaml
+  - /etc/onecheck/team-*/rules.yaml
+```
+
+- Patterns are globs; relative ones are resolved against the config file's
+  directory. A pattern that matches nothing is fine.
+- Files are read in lexicographic order, after the rules of the main file.
+- An include file may contain only the `rules` key:
+
+  ```yaml
+  # conf.d/web.yaml
+  rules:
+    - name: site-up
+      module: http
+      params: { url: https://example.com/ }
+      check: { status: 200 }
+  ```
+
+- A rule name used twice, in any files, is an error naming both files.
+
+## Environment variables in `params`
+
+Strings inside `params` may reference environment variables as `${VAR}`,
+which keeps secrets out of the config file:
+
+```yaml
+params:
+  url: https://api.example.com/health
+  headers:
+    Authorization: "Bearer ${API_TOKEN}"
+```
+
+- Only the `${VAR}` form is expanded. A plain `$VAR` is left alone, so shell
+  commands in the `command` module keep working.
+- Write `$${VAR}` to get a literal `${VAR}`. Every other `$` (including the
+  shell's `$$`, `$1`, `$(...)`) is passed through unchanged.
+- An undefined variable makes that rule an error; it is never replaced by an
+  empty string.
+- `check` is never expanded.
+
+## Logging level
+
+The level comes from, in order: `--log-level`, `log.level`, `info`.
+
+## Two kinds of config errors
+
+**Errors of the whole config** stop onecheck with exit code `2` before any
+check runs: unreadable or invalid YAML, an unknown top-level key, a missing or
+invalid `name`, a rule without a name, a duplicate rule name, an include file
+with keys other than `rules`.
+
+**Errors of a single rule** make only that rule unusable. On `onecheck run`
+the rule gets the status `error` with the reason, and every other rule still
+runs. This covers: an unknown key in the rule, an invalid rule name, a missing
+`module`, a module that is not installed or not compatible, `params` the
+module does not accept, a condition on a field the module does not have, an
+unknown operator or a bad operator argument, an undefined `${VAR}`.
+
+Such an `error` counts as a failure for the rule's state, so after
+`fail_after` runs it produces a `fail` event: a broken rule is reported
+through the same channel as a broken service, instead of silently
+disappearing.
+
+`onecheck validate` prints all errors of both kinds and exits with `2` if
+there are any.
+
+---
+
+# Development
+Source: https://alekzonder.github.io/onecheck/development
+
+# Development
+
+Rules for contributors (commit messages, merges, limits) are in
+[AGENTS.md](https://github.com/alekzonder/onecheck/blob/main/AGENTS.md). This page is about how to build, test and release.
+
+## Requirements
+
+- Go (the version in `go.mod` or newer)
+- `make`
+- network access the first time `make lint` runs: it installs a pinned
+  `golangci-lint` into `./bin`
+- for the documentation site only: Node.js 22 and npm
+
+## Make targets
+
+| Target | What it does |
+|---|---|
+| `make build` | builds `dist/onecheck` and `dist/modules/onecheck-{file,http,command,disk,systemd,cpu,memory,docker,ports}` |
+| `make test` | `go test -race ./...` |
+| `make fmt` | formats the code with `gofmt` |
+| `make lint` | `golangci-lint`, including cyclomatic complexity |
+| `make check` | `fmt-check` + `go vet` + `lint` + `test`; **must pass before a change is done** |
+| `make release-assets` | cross-builds release assets and `checksums.txt` into `dist/release/` |
+| `make docs-build` | checks documentation links and builds the site into `docs/dist/` |
+| `make docs` | builds the site and publishes it to branch `docs` |
+| `make clean` | removes `dist/` |
+
+Builds are static (`CGO_ENABLED=0`). The version is injected with
+`make build VERSION=1.2.3`; without it the version is `dev`.
+
+A new bundled module is picked up by the Makefile automatically: every
+directory `cmd/onecheck-<name>` is built as a module.
+
+## Cyclomatic complexity
+
+`gocyclo` runs as part of `make lint` with a limit of **25** per function
+(`.golangci.yml`). It applies to tests too. When a function goes over the
+limit, split it; do not raise the limit and do not silence the linter.
+
+## Layout
+
+```
+cmd/onecheck/              core CLI entrypoint
+cmd/onecheck-file/         bundled modules: main.go (description),
+cmd/onecheck-http/           collect.go (data collection)
+cmd/onecheck-command/
+pkg/module/                public SDK for module authors: protocol types, Main
+internal/match/            the matching engine: compile + evaluate "check"
+internal/config/           find, load, include, ${VAR} expansion, defaults
+internal/modules/          find modules, describe, run a module process
+internal/state/            pass/fail state machine (pure logic)
+internal/store/            atomic files, run lock, state/result/event files
+internal/result/           Result and Event JSON contracts
+internal/runner/           validate rules, execute, record
+internal/output/           text and JSON rendering, exit code
+internal/logging/          slog setup
+internal/rotate/           logrotate: logs and expired events
+internal/github/           GitHub Releases client
+internal/install/          module install/update/remove, self-update
+internal/cli/              cobra commands
+internal/testmods/         builds bundled modules for tests
+examples/                  example config, validated by a test
+docs/                      user documentation, built into the site by Blume
+scripts/                   documentation link check and publishing
+```
+
+How a run flows through the packages:
+
+```
+cli.run
+ └─ config.Find / config.Load
+ └─ runner.Run
+     ├─ store.Open, Lock
+     ├─ per rule: prepare        modules.Describe, params schema, match.Compile
+     ├─ per rule: modules.Check  starts onecheck-<module>, reads field values
+     │            match.Eval     conditions → failures
+     └─ per rule: state.Advance → store.WriteEvent → SaveState → WriteResult
+ └─ output.Write, output.ExitCode
+```
+
+## Design rules
+
+- **Modules collect, the core decides.** Never put comparison logic into a
+  module. A new way of comparing is a new operator in `internal/match`,
+  where it immediately works for all modules.
+- **One failing rule never stops the others.** Anything wrong with a single
+  rule becomes that rule's `error` result. Only problems of the whole config
+  or of onecheck's own files end a run with exit code `2`.
+- **No lost transitions.** For each rule the event is written before the
+  state. Keep that order.
+- **Atomic files.** Everything under results, state and events is written
+  with `store.WriteFileAtomic`.
+- **The protocol is a contract.** Changing the JSON exchanged with modules
+  incompatibly requires a new `module.ProtocolVersion` and a range in
+  `internal/modules` that still accepts the old one.
+
+## Tests
+
+- Unit tests sit next to the code. The matching engine and the state machine
+  are table-driven.
+- Tests that need real modules build them once per package through
+  `internal/testmods` (`runner`, `cli`). `internal/modules` uses a fake
+  module from `testdata/fakemod` that can misbehave on purpose.
+- Module management is tested against an in-memory GitHub client
+  (`internal/install`) and against a local HTTP server speaking the GitHub
+  API shape (`internal/github`, `internal/cli`).
+- `examples/config.yaml` (with its `conf.d/` includes) is loaded and
+  validated against all bundled modules by `TestExamplesLoadAndValidate`, so
+  examples cannot drift from the code. The test also fails when a bundled
+  module (`cmd/onecheck-<name>`) has no example rule: a new module comes with
+  an example.
+- Tests must not use the network and must not write outside `t.TempDir()`.
+
+Run one package or one test:
+
+```sh
+go test ./internal/match
+go test ./internal/runner -run TestRunTransitionWritesEvent -v
+```
+
+## Adding an operator
+
+1. Add a table-driven case (passing and failing) to
+   `internal/match/match_test.go`, and a case to `TestCompileErrors` for bad
+   arguments.
+2. Implement it in `internal/match/ops.go` and register it in `leafOps`.
+3. Document it in `docs/checks.md`.
+
+## Adding a bundled module
+
+1. Create `cmd/onecheck-<name>/` with `main.go` (description, params schema,
+   fields) and `collect.go`, following the existing modules.
+2. Test `collect` directly; include `TestDescriptionCoversFields`.
+3. Add `docs/modules/<name>.md` (with `title` and `sidebar.label`
+   frontmatter like the other module pages), list it in
+   `docs/modules/meta.ts` and link it from `README.md` and `docs/index.md`.
+
+## Releasing
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) when a
+tag `vX.Y.Z` is pushed:
+
+```sh
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The workflow runs `make check`, then `make release-assets VERSION=1.2.0` and
+publishes a GitHub release with:
+
+```
+onecheck_<os>_<arch>
+onecheck-file_<os>_<arch>
+onecheck-http_<os>_<arch>
+onecheck-command_<os>_<arch>
+onecheck-disk_<os>_<arch>
+onecheck-systemd_<os>_<arch>
+onecheck-cpu_<os>_<arch>
+onecheck-memory_<os>_<arch>
+onecheck-docker_<os>_<arch>
+onecheck-ports_<os>_<arch>
+checksums.txt
+```
+
+for linux and darwin on amd64 and arm64. These names are what
+`onecheck module install` and `onecheck self-update` look for.
+
+After the release is published, the workflow's `docs` job runs `make docs`,
+which publishes the documentation of the tagged commit (see
+[Documentation site](#documentation-site)).
+
+Environment overrides useful when testing update flows against a fork:
+
+| Variable | Effect |
+|---|---|
+| `ONECHECK_GITHUB_API` | API base URL instead of `https://api.github.com` |
+| `ONECHECK_SELF_UPDATE_REPO` | repository `self-update` downloads from |
+| `ONECHECK_SELF_UPDATE_TARGET` | path of the binary `self-update` replaces |
+
+## Documentation site
+
+The pages under `docs/` are published at <https://alekzonder.github.io/onecheck>
+by [Blume](https://useblume.dev). `docs/` is the Blume project and its own
+content root:
+
+| Path | What it is |
+|---|---|
+| `docs/blume.config.ts` | site settings: base `/onecheck`, excluded folders |
+| `docs/package.json`, `docs/package-lock.json` | the pinned Blume version |
+| `docs/index.md` | the home page |
+| `docs/meta.ts`, `docs/modules/meta.ts` | sidebar order |
+| `docs/public/` | static files served at the site root |
+
+Every `.md` page under `docs/` is published, except `docs/superpowers/`
+(internal designs and plans) and build folders. To keep a new folder off the
+site, add it to `content.exclude` in `docs/blume.config.ts`.
+
+**Links between pages use site routes, never `.md` paths:**
+`[Checks](/checks#gt-gte-lt-lte)`, `[disk](/modules/disk)`. Blume prefixes
+the base `/onecheck` itself; it does not rewrite relative `.md` links, so they
+would break on the site. `scripts/docs-check-links.sh` fails the build when one
+appears. Links from outside the site (README, CLI messages) use the full URL
+`https://alekzonder.github.io/onecheck/<route>`.
+
+Preview locally with `cd docs && npm ci && npm run dev`.
+`make docs-build` runs the link check, `blume doctor` and `blume build`; CI
+runs it on every push and pull request (`.github/workflows/check.yml`).
+
+`make docs` (`scripts/publish-docs.sh`) builds the site and commits
+`docs/dist` to branch `docs`, creating it on first use. GitHub Pages serves
+branch `docs`, path `/`. The release workflow runs it for every tag, so the
+site always shows the latest release.
+
+---
+
+# Getting started
+Source: https://alekzonder.github.io/onecheck/getting-started
+
+# Getting started
+
+## Install
+
+onecheck is one static binary plus one executable per check module.
+
+### With the install script
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh | sh
+```
+
+The script detects the system and CPU, asks GitHub for the latest release,
+verifies the download against the release's `checksums.txt`, and installs
+onecheck together with the bundled modules (`file`, `http`, `command`, `disk`, `systemd`, `cpu`, `memory`, `docker`, `ports`) of the
+same version.
+
+A specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alekzonder/onecheck/main/install.sh | sh -s -- --version 0.1.0
+```
+
+Every version gets its own directory, and a symlink in a bin directory points
+at the chosen one:
+
+| | Linux | macOS |
+|---|---|---|
+| versions | `/usr/local/lib/onecheck/versions/<version>/onecheck` | `~/.local/share/onecheck/versions/<version>/onecheck` |
+| symlink | `/usr/local/bin/onecheck` | `~/.local/bin/onecheck` |
+| modules | `/usr/lib/onecheck/modules` | `~/.local/lib/onecheck/modules` |
+
+On Linux the install is system-wide, and the script calls `sudo` when it is
+not run as root. On macOS everything stays in the home directory; if
+`~/.local/bin` is not in `PATH`, the script says how to add it.
+
+| Option | Description |
+|---|---|
+| `--version <v>` | version to install (`0.1.0` or `v0.1.0`); default: the latest release. Also `ONECHECK_VERSION` |
+| `--root <dir>` | where versions are kept |
+| `--bin-dir <dir>` | where the `onecheck` symlink is created |
+| `--modules-dir <dir>` | where the bundled modules go |
+| `--no-modules` | install onecheck only |
+
+Set `GITHUB_TOKEN` if GitHub's rate limit gets in the way.
+
+To upgrade, downgrade or switch back, run the script again. A version that is
+already on disk is not downloaded again, only the symlink is switched, and the
+modules are brought to the same version. Old versions are kept until you
+delete their directories under `versions/`. `onecheck self-update` refuses to
+touch a binary installed this way, because it would overwrite one version's
+directory with another version.
+
+The modules directories above are the defaults of `paths.modules`: the Linux
+one for root, the macOS one for a regular user. If you run onecheck on Linux
+as a regular user, set `paths.modules: /usr/lib/onecheck/modules` in the
+config, or install with `--modules-dir ~/.local/lib/onecheck/modules`.
+
+### By hand
+
+1. Download `onecheck_<os>_<arch>` from the
+   [releases](https://github.com/alekzonder/onecheck/releases), verify it
+   against `checksums.txt`, and put it into `PATH` as `onecheck`:
+
+   ```sh
+   install -m 0755 onecheck_linux_amd64 /usr/local/bin/onecheck
+   onecheck version
+   ```
+
+2. Install the bundled modules (`file`, `http`, `command`, `disk`, `systemd`, `cpu`, `memory`, `docker`, `ports`):
+
+   ```sh
+   onecheck module install alekzonder/onecheck --modules-dir /usr/lib/onecheck/modules
+   onecheck module list --modules-dir /usr/lib/onecheck/modules
+   ```
+
+   Once a config exists, `--modules-dir` is not needed: the directory is
+   taken from `paths.modules`.
+
+Or build everything from source: `make build` puts the binary into
+`dist/onecheck` and the modules into `dist/modules/`.
+
+## First config
+
+onecheck looks for its config in this order:
+
+1. `--config <path>` (`-c`)
+2. `$ONECHECK_CONFIG`
+3. `/etc/onecheck/config.yaml`
+4. `$HOME/.config/onecheck/config.yaml`
+
+A minimal config needs a name and some rules:
+
+```yaml
+name: main
+
+rules:
+  - name: root-disk-marker
+    module: file
+    params:
+      path: /etc/hostname
+    check:
+      exists: true
+      size: { gt: 0 }
+
+  - name: site-up
+    module: http
+    params:
+      url: https://example.com/
+    check:
+      status: 200
+```
+
+Each rule has three parts:
+
+- `module` — which module collects the data;
+- `params` — the module's input (what to look at);
+- `check` — conditions on the values the module returns.
+
+See [examples/config.yaml](../examples/config.yaml) for a fuller example,
+[Configuration](/configuration) for every key and [Checks](/checks)
+for everything `check` can express.
+
+## Validate and run
+
+```sh
+onecheck validate          # reports every config problem at once, runs nothing
+onecheck paths             # where the config, log, state, results and events are
+onecheck                   # run all rules; same as "onecheck run"
+onecheck --only-failed     # print only what is wrong
+onecheck -o json           # machine-readable output
+onecheck --rule site-up    # run one rule
+```
+
+The exit code is `0` when every rule passed, `1` when something failed, `2`
+when onecheck could not run at all. Details: [Output and results](/output-and-results).
+
+## Schedule it
+
+onecheck has no scheduler of its own. Run it from cron:
+
+```cron
+# /etc/cron.d/onecheck
+* * * * *   root  onecheck --only-failed >/dev/null
+17 3 * * *  root  onecheck logrotate >/dev/null
+```
+
+or from a systemd timer:
+
+```ini
+# /etc/systemd/system/onecheck.service
+[Unit]
+Description=onecheck run
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/onecheck --only-failed
+# exit code 1 means "a check failed", which is not a unit failure
+SuccessExitStatus=1
+```
+
+```ini
+# /etc/systemd/system/onecheck.timer
+[Unit]
+Description=Run onecheck every minute
+
+[Timer]
+OnCalendar=minutely
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+```
+
+### Checks at different intervals
+
+Use one config per interval, each with its own `name`, and one schedule line
+per config:
+
+```cron
+* * * * *    root  onecheck -c /etc/onecheck/fast.yaml --only-failed >/dev/null
+*/15 * * * * root  onecheck -c /etc/onecheck/slow.yaml --only-failed >/dev/null
+```
+
+Configs with different names never block each other: results, state, logs and
+the run lock are kept per name. If a run of the *same* config is still in
+progress when the next one starts, the new one exits with code `2`.
+
+## What gets written where
+
+With the default paths, for root:
+
+| What | Where |
+|---|---|
+| latest result of each rule | `/var/lib/onecheck/results/<name>/<rule>.json` |
+| state between runs | `/var/lib/onecheck/state/<name>/` |
+| events (pass ↔ fail changes) | `/var/lib/onecheck/events/` |
+| log | `/var/log/onecheck/<name>/onecheck.log` |
+| modules | `/usr/lib/onecheck/modules/` |
+
+For other users everything lives under `$HOME/.local/state/onecheck/` and
+`$HOME/.local/lib/onecheck/modules/`. All of it is configurable:
+[Configuration](/configuration).
+
+---
+
+# Logging and logrotate
+Source: https://alekzonder.github.io/onecheck/logging-and-logrotate
+
+# Logging and logrotate
+
+## Log file
+
+Every run appends to
+
+```
+<log.dir>/<config name>/onecheck.log
+```
+
+by default `/var/log/onecheck/<name>/onecheck.log` for root and
+`$HOME/.local/state/onecheck/log/<name>/onecheck.log` for other users. The
+directory is created when needed. `onecheck paths` prints the exact path for
+the current config.
+
+```yaml
+log:
+  level: info      # debug | info | warn | error
+  dir: /var/log/onecheck
+  format: text     # text | json
+```
+
+| Level | What is logged |
+|---|---|
+| `error` | a run that could not complete |
+| `warn` | recoverable problems, e.g. an unreadable state file |
+| `info` | one line per rule with its outcome, state changes, a summary per run |
+| `debug` | additionally, per rule: the params and fields requested from the module, the values it returned (long strings cut to 256 bytes), the state counters; the modules found; what modules printed on their stderr |
+
+The level is taken from `--log-level`, then `log.level`, then `info`:
+
+```sh
+onecheck --log-level debug --rule api-health
+```
+
+`text` format:
+
+```
+time=2026-11-23T10:00:00.123Z level=INFO msg="check failed" rule=api-health module=http status=fail state=pass duration_ms=124 failures="[status: expected equals 200, got 503]"
+time=2026-11-23T10:00:00.130Z level=INFO msg="state changed" rule=api-health transition=fail event=20261123T100000Z-main-api-health-fail
+time=2026-11-23T10:00:00.131Z level=INFO msg="run finished" total=12 passed=11 failed=1 errors=0
+```
+
+`json` format writes the same records as one JSON object per line.
+
+Messages at `warn` and above are also printed on stderr, so cron mails them.
+With `--log-level` on the command line, stderr shows everything at that level
+as well, so a run can be watched in the terminal:
+
+```sh
+onecheck --log-level debug --rule api-health
+```
+
+`log.level` in the config changes only the log file, never stderr. Log lines
+never go to stdout, which carries only results.
+
+At `debug` the log contains rule params and returned values as they are,
+including HTTP headers and command output. Do not leave `log.level: debug`
+on if those hold secrets.
+
+If the log file cannot be opened, onecheck prints a warning, logs to stderr
+for that run, and still runs the checks.
+
+## `onecheck logrotate`
+
+onecheck does not depend on the system's logrotate. One command takes care of
+both things that would otherwise grow forever: the log and the event queue.
+
+```sh
+onecheck logrotate            # logs and events
+onecheck logrotate --logs     # only the log of this config
+onecheck logrotate --events   # only expired events
+```
+
+Schedule it, for example once a day:
+
+```cron
+17 3 * * *  root  onecheck logrotate >/dev/null
+```
+
+With several configs, run it once per config (logs are per config):
+
+```cron
+17 3 * * *  root  onecheck logrotate -c /etc/onecheck/fast.yaml >/dev/null
+18 3 * * *  root  onecheck logrotate -c /etc/onecheck/slow.yaml >/dev/null
+```
+
+### Logs
+
+```yaml
+log:
+  rotate:
+    max_size: 10MB   # rotate when the log is larger than this
+    keep: 5          # number of rotated files to keep
+    max_age: 30d     # also remove rotated files older than this
+    compress: true   # gzip rotated files
+```
+
+When `onecheck.log` is larger than `max_size`:
+
+- `onecheck.log` becomes `onecheck.log.1` (or `onecheck.log.1.gz`);
+- existing `onecheck.log.N` move to `N+1`;
+- the next run starts a new `onecheck.log`.
+
+On every call, rotated files with an index above `keep`, or older than
+`max_age`, are removed. The log is only rotated when it is too large, so
+calling `logrotate` often is harmless.
+
+Rotation takes the config's run lock. If a run is in progress at that moment
+the logs are skipped with a message and handled by the next call.
+
+### Events
+
+```yaml
+events:
+  ttl: 24h
+```
+
+An event is written with `expires_at` = time of the event + `events.ttl`.
+`onecheck logrotate` removes events whose `expires_at` has passed. This only
+matters for events nobody consumed: a notification service normally deletes
+events as it processes them (see [State and events](/state-and-events)).
+
+The event queue is shared by all configs, so the cleanup of any one config
+covers all of them. Each event keeps the lifetime it was written with.
+
+Files in the queue directory that cannot be read as events, and temporary
+files left by an interrupted write, are removed once they are older than
+`events.ttl`.
+
+---
+
+# Module management
+Source: https://alekzonder.github.io/onecheck/module-management
+
+# Module management
+
+A module is an executable file named `onecheck-<name>` in the modules
+directory (`paths.modules`). onecheck reads that directory on every run:
+there is no registry to refresh and nothing to restart. A module is usable
+from the moment its file is there, and gone when the file is removed.
+
+Modules are distributed through GitHub Releases. The `onecheck module`
+commands download, verify and install them; you can also copy a module file
+into the directory by hand.
+
+All commands take the modules directory from the config. Without a config,
+pass `--modules-dir <dir>`.
+
+## List
+
+```console
+$ onecheck module list
+modules in /usr/lib/onecheck/modules:
+NAME     VERSION  PROTOCOL  COMPATIBLE  SOURCE               DESCRIPTION
+command  1.2.0    1         yes         alekzonder/onecheck  Run a command and return its exit code, stdout and stderr
+file     1.2.0    1         yes         alekzonder/onecheck  Inspect a file, directory or symlink: ...
+http     1.2.0    1         yes         alekzonder/onecheck  Make an HTTP/HTTPS request and return ...
+```
+
+`SOURCE` is the repository a module was installed from; `-` means the file
+was put there by hand. `COMPATIBLE` says whether this onecheck can talk to
+the module, see [Compatibility](#compatibility).
+
+## Search
+
+```sh
+onecheck module search                         # repositories from modules.repos in the config
+onecheck module search alekzonder/onecheck someone/onecheck-postgres
+```
+
+Lists every release of the repositories and the modules each release has for
+this machine's OS and architecture, with the command to install each.
+
+## Install
+
+```sh
+onecheck module install alekzonder/onecheck              # every module of the latest release
+onecheck module install alekzonder/onecheck http         # one module, latest release
+onecheck module install alekzonder/onecheck file@1.2.0   # a specific version
+```
+
+"Latest" is the newest release that is not marked as a pre-release. A
+pre-release is only installed when asked for by version.
+
+What install does, per module:
+
+1. downloads the asset into a temporary file inside the modules directory;
+2. compares its sha256 with the release's `checksums.txt` — a release without
+   `checksums.txt`, or without an entry for the asset, is refused;
+3. runs the downloaded file with `describe` and checks that it is the module
+   it claims to be and speaks a supported protocol version;
+4. renames it into place in one step, replacing a previous version;
+5. records repository, version and checksum in `installed.json` in the
+   modules directory.
+
+If any step fails, nothing changes: a previously installed version keeps
+working, and no partial file is left.
+
+## Update
+
+```sh
+onecheck module update            # all modules installed with "module install"
+onecheck module update http file  # only these
+```
+
+Each module is updated to the latest stable release of the repository it was
+installed from. For every module onecheck prints either `updated <name> to
+<version>` or `skipped <name>: <reason>`. Reasons include: already up to
+date; the new release speaks a protocol this onecheck does not support
+(update onecheck first); the module was copied in by hand, so its source is
+unknown.
+
+A skip is not a failure. An update that was attempted and failed (download
+error, checksum mismatch, a module that does not run) stops the command with
+exit code `2`; the installed version stays in place.
+
+## Remove
+
+```sh
+onecheck module remove http
+```
+
+Rules that still use the module will get status `error` ("module is not
+installed").
+
+## Updating onecheck itself
+
+```sh
+onecheck self-update                  # latest stable release
+onecheck self-update --version 1.4.0  # a specific one
+```
+
+The asset `onecheck_<os>_<arch>` is downloaded next to the running binary,
+verified against `checksums.txt`, started once (`version`) to prove it runs,
+and then renamed over the current binary in one step. On any failure the
+current binary is left untouched. The user running the command needs write
+access to the directory of the binary.
+
+A onecheck installed with `install.sh` lives in a per-version directory and
+is not updated by `self-update` (the command refuses): run `install.sh`
+again, see [Getting started](/getting-started#with-the-install-script).
+
+`self-update` does not touch modules, and `module update` does not touch
+onecheck. A typical sequence:
+
+```sh
+onecheck self-update && onecheck module update
+```
+
+## Compatibility
+
+onecheck and modules are versioned independently. What must match is the
+**module protocol**: the JSON a module and onecheck exchange.
+
+- Every module reports the protocol version it speaks.
+- Every onecheck supports a range of protocol versions; `onecheck version`
+  prints it.
+- A module outside that range is shown as not compatible by `module list` and
+  `validate`; rules using it get status `error`; `install` and `update`
+  refuse to install such a version.
+
+Module versions themselves (semver, the release tag without the leading `v`)
+are only used to decide whether an update is available.
+
+Bundled modules (`file`, `http`, `command`, `disk`, `systemd`, `cpu`, `memory`, `docker`, `ports`) are released together with
+onecheck from the same repository and carry the same version number, but any
+mix that shares a protocol version works.
+
+## Repositories of third-party modules
+
+Any GitHub repository can distribute modules. A release needs:
+
+- one asset per module and platform, named
+  `onecheck-<name>_<os>_<arch>`, e.g. `onecheck-postgres_linux_amd64`
+  (`<os>` and `<arch>` as in Go: `linux`, `darwin`; `amd64`, `arm64`);
+- an asset `checksums.txt` in `sha256sum` format covering them:
+
+  ```
+  3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  onecheck-postgres_linux_amd64
+  ```
+
+Module names are lower-case letters, digits, `_` and `-`. See
+[Module protocol](/module-protocol) for how to write a module.
+
+Add repositories you use to the config so that `module search` covers them:
+
+```yaml
+modules:
+  repos:
+    - alekzonder/onecheck
+    - someone/onecheck-postgres
+```
+
+## Environment
+
+| Variable | Effect |
+|---|---|
+| `GITHUB_TOKEN` | sent to the GitHub API: higher rate limits, access to private repositories |
+| `ONECHECK_GITHUB_API` | API base URL instead of `https://api.github.com` (GitHub Enterprise) |
+
+## Security notes
+
+- Checksums come from the same release as the files. They protect against
+  corrupted or truncated downloads, not against a compromised repository.
+  Only install modules from repositories you trust: a module runs with the
+  privileges of onecheck.
+- Modules are looked up only in the modules directory, never in `PATH`. Keep
+  that directory writable by root (or the onecheck user) only.
+
+---
+
+# Module protocol
+Source: https://alekzonder.github.io/onecheck/module-protocol
+
+# Module protocol
+
+This page is for people writing a module. A module teaches onecheck a new
+kind of check: Postgres, Redis, DNS, a message queue, anything.
+
+## The idea
+
+A module is a standalone executable named `onecheck-<name>`. onecheck starts
+it once per check, hands it the rule's `params` on stdin as JSON, and reads
+**field values** from its stdout as JSON.
+
+A module never decides whether a check passed. It returns facts ("status is
+503", "the file is 2 KB"); onecheck evaluates the rule's `check` conditions
+on them. That is why every operator, JSON assertions and JSON Schema work for
+every module without the module doing anything.
+
+A module can be written in any language. For Go there is a small SDK,
+`github.com/alekzonder/onecheck/pkg/module`.
+
+Protocol version described here: **1**.
+
+## Invocations
+
+A module must implement two subcommands.
+
+### `onecheck-<name> describe`
+
+Prints a JSON description on stdout and exits with `0`. It must be fast and
+free of side effects: onecheck calls it on every run and on install.
+
+```json
+{
+  "protocol": 1,
+  "name": "redis",
+  "version": "0.3.0",
+  "description": "Ping a Redis server and read INFO",
+  "params_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["addr"],
+    "properties": {
+      "addr": { "type": "string" },
+      "password": { "type": "string" }
+    }
+  },
+  "fields": {
+    "ping":        { "type": "string",   "description": "reply to PING" },
+    "role":        { "type": "string",   "description": "master or replica" },
+    "used_memory": { "type": "bytes",    "description": "memory used by Redis" },
+    "uptime":      { "type": "duration", "description": "time since start" },
+    "info":        { "type": "object",   "description": "all INFO keys" }
+  }
+}
+```
+
+| Key | Required | Description |
+|---|---|---|
+| `protocol` | yes | protocol version the module speaks |
+| `name` | yes | module name; must equal `<name>` in the file name |
+| `version` | yes | module version (semver) |
+| `description` | no | one line, shown by `onecheck module list` |
+| `params_schema` | no | JSON Schema (draft 2020-12) for the rule's `params`; onecheck validates `params` with it before starting a check |
+| `fields` | yes | every field the module can return: name → `type`, `description`, and optionally `"output": true` |
+
+Field types:
+
+| Type | JSON value | Notes |
+|---|---|---|
+| `string`, `number`, `bool`, `object`, `array` | the JSON type | |
+| `bytes` | number of bytes | conditions may use `10MB` etc. |
+| `duration` | number of seconds, may be fractional | conditions may use `500ms`, `1h` etc. |
+
+A field with `"output": true` is diagnostic output, like a command's stdout
+or a response body. onecheck asks for such fields on every check (they are
+added to `fields` of the request) and saves their tail in the result even if
+no condition uses them, see
+[Output and results](/output-and-results#saved-output). Mark only what
+helps to understand a failure and is not expensive to collect.
+
+Declaring fields lets `onecheck validate` reject a condition on a field that
+does not exist. Use `"additionalProperties": false` in `params_schema` so
+that typos in `params` are caught.
+
+### `onecheck-<name> check`
+
+Reads one request from stdin, prints one response on stdout.
+
+Request:
+
+```json
+{
+  "protocol": 1,
+  "rule": "cache-alive",
+  "params": { "addr": "127.0.0.1:6379" },
+  "fields": ["ping", "used_memory"],
+  "max_field_size": 10485760,
+  "timeout_ms": 30000
+}
+```
+
+| Key | Description |
+|---|---|
+| `protocol` | protocol version onecheck is using for this call |
+| `rule` | rule name, for the module's own log messages |
+| `params` | the rule's `params`, already validated against `params_schema` |
+| `fields` | the fields the rule's conditions use, plus the module's output fields unless the rule has `output_tail: 0`. A module may skip collecting everything else, which matters for expensive fields. Empty when the rule has no conditions: then collect only what is cheap |
+| `max_field_size` | largest size in bytes of one string value; do not read more than `max_field_size + 1` bytes of anything |
+| `timeout_ms` | the rule's timeout; finish before it |
+
+Response:
+
+```json
+{
+  "fields": { "ping": "PONG", "used_memory": 1048576 },
+  "truncated": [],
+  "error": null
+}
+```
+
+| Key | Description |
+|---|---|
+| `fields` | field name → value. Omit a field that has no value in this situation |
+| `truncated` | names of string fields that were cut to `max_field_size`. onecheck refuses to evaluate conditions on them |
+| `error` | `null`, or `{"message": "..."}` when the data could not be collected. `fields` may still carry output fields collected before the failure (what a command printed before its timeout); onecheck saves them and evaluates nothing |
+
+## Rules of behaviour
+
+**Errors versus values.** Return `error` when you could not find out:
+connection refused, permission denied, timeout. Return a value when you found
+out, even if the answer is bad: an HTTP 500 is `status: 500`, a missing file
+is `exists: false`, a non-zero exit code is `exit_code: 3`. An `error` makes
+the rule's status `error`; values are judged by the user's conditions.
+
+**Exit code.** Exit with `0` whenever you produced a response, including one
+with `error` set. A non-zero exit code, invalid JSON on stdout, or no output
+means the module itself is broken; the rule gets status `error`.
+
+**stdout is for the response only.** Write diagnostics to stderr. onecheck
+puts a module's stderr into its log at level `debug`.
+
+**Timeouts.** onecheck starts a module in its own process group and kills
+the whole group a short moment after `timeout_ms`, and also when onecheck
+itself is interrupted. Leave child processes in that group (do not call
+`setsid`/`setpgid` for them), so they are cleaned up with the module. Prefer to stop on your own before that and
+return an `error` saying what timed out.
+
+**Size limits.** Never read an unbounded amount into memory. Read at most
+`max_field_size + 1` bytes; if there was more, cut the value to
+`max_field_size` and list the field in `truncated`.
+
+**No state, no side effects.** A module is started fresh for every check and
+may run in parallel with other checks, including other instances of itself.
+
+**Environment.** A module inherits onecheck's environment and runs with its
+privileges.
+
+## Writing a module in Go
+
+The SDK implements the protocol; you provide a description and one function.
+
+```go
+// Command onecheck-uptime reports how long the machine has been up.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/alekzonder/onecheck/pkg/module"
+)
+
+type params struct {
+	// File lets tests point the module at a fixture.
+	File string `json:"file"`
+}
+
+func collect(_ context.Context, req module.Request) (map[string]any, error) {
+	p := params{File: "/proc/uptime"}
+	if err := module.DecodeParams(req.Params, &p); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p.File)
+	if err != nil {
+		return nil, err // could not find out: an error
+	}
+	seconds, err := strconv.ParseFloat(strings.Fields(string(data))[0], 64)
+	if err != nil {
+		return nil, fmt.Errorf("unexpected content of %s", p.File)
+	}
+	return map[string]any{"uptime": seconds}, nil
+}
+
+func main() {
+	module.Main(module.Module{
+		Description: module.Description{
+			Name:        "uptime",
+			Version:     "0.1.0",
+			Description: "Time since the machine booted",
+			ParamsSchema: json.RawMessage(`{
+				"type": "object",
+				"additionalProperties": false,
+				"properties": {"file": {"type": "string"}}
+			}`),
+			Fields: map[string]module.FieldInfo{
+				"uptime": {Type: module.TypeDuration, Description: "time since boot"},
+			},
+		},
+		Collect: collect,
+	})
+}
+```
+
+```sh
+go build -o /usr/lib/onecheck/modules/onecheck-uptime .
+```
+
+```yaml
+rules:
+  - name: no-recent-reboot
+    module: uptime
+    check:
+      uptime: { gt: 10m }
+```
+
+What the SDK does for you:
+
+- `module.Main` handles `describe` and `check`, fills in `protocol`, applies
+  `timeout_ms` to the context passed to `Collect`, turns a returned error
+  into the `error` response, and cuts over-long string values while recording
+  them in `truncated`.
+- `module.DecodeParams` decodes `params` strictly (unknown keys are errors).
+- `req.Wants("field")` tells whether a rule uses a field;
+  `req.WantsOr("field", cheap)` additionally answers `cheap` when the rule
+  has no conditions at all. Use them to skip expensive work.
+
+## Writing a module in another language
+
+Anything that can read stdin and print JSON works. A complete module in
+shell:
+
+```sh
+#!/bin/sh
+# onecheck-loadavg: 1, 5 and 15 minute load averages
+case "$1" in
+  describe)
+    cat <<'JSON'
+{"protocol": 1, "name": "loadavg", "version": "0.1.0",
+ "description": "System load averages",
+ "params_schema": {"type": "object", "additionalProperties": false},
+ "fields": {
+   "load1":  {"type": "number", "description": "1 minute load average"},
+   "load5":  {"type": "number", "description": "5 minute load average"},
+   "load15": {"type": "number", "description": "15 minute load average"}}}
+JSON
+    ;;
+  check)
+    cat >/dev/null                      # the request is not needed here
+    if read -r l1 l5 l15 _ < /proc/loadavg; then
+      printf '{"fields": {"load1": %s, "load5": %s, "load15": %s}, "truncated": [], "error": null}\n' "$l1" "$l5" "$l15"
+    else
+      printf '{"fields": {}, "truncated": [], "error": {"message": "cannot read /proc/loadavg"}}\n'
+    fi
+    ;;
+  *)
+    echo "usage: $0 describe|check" >&2
+    exit 2
+    ;;
+esac
+```
+
+## Trying a module by hand
+
+```sh
+onecheck-uptime describe | jq .
+
+echo '{"protocol":1,"rule":"t","params":{},"fields":["uptime"],"max_field_size":1048576,"timeout_ms":5000}' \
+  | onecheck-uptime check | jq .
+
+onecheck module list          # is it found, is it compatible
+onecheck validate             # do my rules fit its params and fields
+onecheck --rule no-recent-reboot --log-level debug
+```
+
+## Distributing a module
+
+Publish a GitHub release with assets named `onecheck-<name>_<os>_<arch>` and
+a `checksums.txt`; then anyone can `onecheck module install <owner/repo>`.
+Details: [Module management](/module-management#repositories-of-third-party-modules).
+
+## Protocol versions
+
+The protocol version is a single integer. It changes only when the JSON
+exchanged above changes incompatibly. onecheck supports a range of versions
+(`onecheck version` prints it) and passes the module's own version back in
+each request. Adding optional keys to requests or responses does not change
+the version: modules must ignore request keys they do not know, and onecheck
+ignores response keys it does not know.
+
+---
+
+# command module
+Source: https://alekzonder.github.io/onecheck/modules/command
+
+Runs a command and returns its exit code and output.
+
+## Params
+
+Exactly one of `run` and `argv` is required.
+
+| Key | Description |
+|---|---|
+| `run` | a command line, executed with `sh -c`; pipes, redirects and variables work |
+| `argv` | a list: program and its arguments, executed directly, without a shell |
+| `env` | extra environment variables, a mapping of name to value |
+| `cwd` | working directory |
+| `stdin` | text passed to the command on standard input |
+
+The command inherits onecheck's environment plus `env`. It is killed,
+together with everything it started, when the rule's `timeout` expires.
+
+Prefer `argv` when arguments come from elsewhere: nothing is interpreted by a
+shell. In `run`, shell variables such as `$HOME`, `$1`, `$$` and `$(...)`
+reach the shell untouched; only the `${VAR}` form is expanded by onecheck
+from its own environment first (write `$${VAR}` to pass it to the shell
+literally).
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `exit_code` | number | exit code of the command; `-1` if it was killed by a signal |
+| `stdout` | string | standard output |
+| `stderr` | string | standard error |
+| `duration` | **duration** | how long the command ran |
+
+A non-zero exit code is a value, not an error: check it with `exit_code`. The
+rule ends with status `error` when the command could not be run at all
+(program not found, not executable, bad `cwd`) or hit the timeout.
+
+Note that a rule does **not** require exit code `0` unless you say so. Add
+`exit_code: 0` to `check`.
+
+The tail of `stdout` and `stderr` (the last `10k` of each by default) is saved
+in the rule's result on every run, also when no condition mentions them and
+when the command hit the timeout, so a failure can be investigated afterwards.
+Change the size with `output_tail`, see
+[Output and results](/output-and-results#saved-output).
+
+`stdout` and `stderr` are each limited by `run.max_field_size` (default
+`10MB`).
+
+Output usually ends with a newline. With `equals` include it (`"active\n"`);
+with `matches` use `(?m)` so `$` matches before it: `'(?m)^active$'`.
+
+## Examples
+
+```yaml
+rules:
+  # exit code only
+  - name: nginx-config-valid
+    module: command
+    params: { argv: [nginx, -t] }
+    check:
+      exit_code: 0
+
+  # exit code and output
+  - name: nginx-active
+    module: command
+    params: { argv: [systemctl, is-active, nginx] }
+    check:
+      exit_code: 0
+      stdout: { matches: '(?m)^active$' }
+
+  # a shell pipeline producing a number
+  - name: not-too-many-processes
+    module: command
+    params: { run: "ps -e --no-headers | wc -l" }
+    check:
+      exit_code: 0
+      stdout: { matches: '^\s*\d{1,3}\s*$' }      # fewer than 1000
+
+  # JSON output
+  - name: queue-short
+    module: command
+    timeout: 5s
+    params: { run: "rabbitmqctl list_queues --formatter json" }
+    check:
+      exit_code: 0
+      stdout:
+        json:
+          assert:
+            - { path: '#(messages>1000)#', length: 0 }
+
+  # nothing alarming on stderr, some output on stdout
+  - name: backup-dry-run
+    module: command
+    params:
+      run: "./backup.sh --dry-run"
+      cwd: /opt/backup
+      env: { BACKUP_TARGET: s3://bucket/prefix }
+    check:
+      exit_code: { in: [0, 2] }
+      stdout: { length: { gt: 0 } }
+      stderr: { not_matches: '(?i)error|denied' }
+```
+
+---
+
+# cpu module
+Source: https://alekzonder.github.io/onecheck/modules/cpu
+
+Reports how busy the host's CPUs are, the load average and the number of
+cores, so a host that is overloaded for a long time is noticed before its
+services slow down. Works on Linux and macOS.
+
+## Params
+
+| Key | Required | Description |
+|---|---|---|
+| `window` | no | how long CPU usage is measured: `500ms`, `5s`, `1m`, or a bare number of seconds; default `1s`; from `100ms` to `5m` |
+
+CPU usage is the difference of two readings of the CPU counters: the module
+reads them, waits `window`, and reads them again. Write the window quoted or
+not: `window: 5s`, `window: 5`.
+
+The window must be shorter than the rule's `timeout` (default 30s);
+otherwise the rule is an `error` at once, without waiting, telling you to
+shorten the window or raise `timeout`. A longer window smooths short bursts;
+for sustained load combine a short window with `fail_after` (see
+[State and events](/state-and-events#thresholds-fail_after-pass_after)).
+
+The module waits only when a `*_percent` field is checked. A rule that
+checks only load average answers immediately.
+
+## Fields
+
+Usage over the window, in percent of all cores together (a 4-core host with
+one core fully busy shows 25), two decimals:
+
+| Field | Type | Description |
+|---|---|---|
+| `usage_percent` | number | busy time: everything except idle and iowait (steal counts as busy) |
+| `user_percent` | number | programs (user and nice time) |
+| `system_percent` | number | kernel (system, irq and softirq time) |
+| `iowait_percent` | number | idle while waiting for disk; **Linux only** |
+| `steal_percent` | number | time a virtual machine waited for the hypervisor; **Linux only** |
+
+Without waiting:
+
+| Field | Type | Description |
+|---|---|---|
+| `cores` | number | logical CPUs |
+| `load1`, `load5`, `load15` | number | load average over 1, 5 and 15 minutes |
+| `load1_per_core`, `load5_per_core`, `load15_per_core` | number | load average divided by `cores` |
+
+### Which field to use
+
+- **CPU busy:** `usage_percent`. It includes steal time, so on a virtual
+  machine a high `usage_percent` with a high `steal_percent` means the
+  hypervisor is short of CPU, not your programs; check
+  `user_percent`/`system_percent` for what your programs use.
+- **Load:** prefer `*_per_core` to `load*`: the same threshold then fits
+  hosts with any number of cores. Load above 1 per core means work is
+  waiting for a CPU. `load5`/`load15` react slower and ignore short spikes.
+- On Linux load average also counts processes waiting for disk, so high
+  load with low `usage_percent` and high `iowait_percent` points to slow
+  storage rather than to the CPU.
+
+Which fields are present:
+
+- `iowait_percent` and `steal_percent` are missing on macOS, which does not
+  report these times; a condition on them fails with "got nothing (path is
+  missing)".
+- `*_percent` fields are missing when no rule condition asks for them.
+  On macOS a rule that checks only `iowait_percent`/`steal_percent` does
+  not wait the window.
+
+Inside a container the module reports the host's CPUs and load, not the
+container's limits.
+
+Reading the counters failing is an `error`, not a `fail`.
+
+## Examples
+
+```yaml
+# conf.d/cpu.yaml
+rules:
+  # busy for three runs in a row (three minutes from cron)
+  - name: cpu
+    module: cpu
+    params: { window: 5s }
+    fail_after: 3
+    check:
+      usage_percent: { lt: 90 }
+
+  # load too high for the number of cores; answers without waiting
+  - name: load
+    module: cpu
+    check:
+      load5_per_core: { lt: 1.5 }
+```
+
+A failure names the rule and the value:
+
+```
+FAIL   cpu   (cpu, 5006ms)
+       usage_percent: expected lt 90, got 97.32
+```
+
+---
+
+# disk module
+Source: https://alekzonder.github.io/onecheck/modules/disk
+
+Reports free space and inodes of one filesystem, so a disk that is filling up
+is noticed before services on it start to fail. Running out of inodes (many
+small files: sessions, caches, mail queues) breaks writes just like running
+out of space, so check both.
+
+## Params
+
+| Key | Required | Description |
+|---|---|---|
+| `path` | yes | a mount point, any path inside a filesystem, or a device |
+
+- A mount point (`/var`) or any path inside a filesystem
+  (`/var/lib/postgresql`): the filesystem holding that path is reported.
+  Symlinks are followed.
+- A device under `/dev/` (`/dev/sda1`, `/dev/mapper/vg-data`,
+  `/dev/disk/by-uuid/...`): its mount point is looked up in the mount table.
+  Symlinks are resolved on both sides, so any name of the device works.
+  A root filesystem listed in the mount table under a name that does not
+  exist on disk (`/dev/root` on some systems) cannot be found by device;
+  use its mount point, `/`, instead.
+
+One rule checks one filesystem; write one rule per disk. Checking all disks
+automatically is not supported yet.
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `total` | **bytes** | size of the filesystem |
+| `free` | **bytes** | space available to ordinary users, like `df` "Avail" |
+| `used` | **bytes** | used space: `total` minus all free blocks |
+| `used_percent` | number | `used / (used + free) * 100`, like `df` "Use%" |
+| `inodes_total` | number | inodes of the filesystem |
+| `inodes_free` | number | free inodes |
+| `inodes_used` | number | used inodes |
+| `inodes_used_percent` | number | `inodes_used / inodes_total * 100` |
+| `mountpoint` | string | where the filesystem is mounted |
+| `device` | string | the mounted device, as in the mount table |
+| `fstype` | string | filesystem type, e.g. `ext4`, `xfs`, `apfs` |
+
+Percentages have two decimals (`89.1`); `df` rounds them up (`90%`).
+
+Blocks reserved for root (5 % on ext4 by default) count as unavailable, as in
+`df`: `used_percent` reaches 100 when ordinary users can no longer write,
+even though root still can.
+
+**bytes** fields accept unit literals in conditions: `free: { gt: 5GB }`.
+See [Checks](/checks#gt-gte-lt-lte).
+
+Which fields are present:
+
+- `inodes_*` are missing on filesystems without a fixed number of inodes
+  (btrfs and some others report 0). A condition on them then fails with
+  "got nothing (path is missing)"; leave inode conditions out for such disks.
+  ZFS reports an inode count that grows and shrinks with free space, so
+  `inodes_used_percent` on ZFS mostly repeats `used_percent`.
+- `mountpoint`, `device` and `fstype` are missing if the mount table cannot
+  be read; the numbers are still reported.
+
+A path that does not exist, a device that is not mounted, or a filesystem
+that cannot be queried is an `error`, not a `fail`.
+
+A rule without `check` passes whenever the numbers could be read, as with any
+module, so always give thresholds.
+
+## Examples
+
+```yaml
+# conf.d/disks.yaml
+rules:
+  # recommended thresholds for a system disk
+  - name: disk-root
+    module: disk
+    params: { path: / }
+    check:
+      used_percent: { lt: 90 }
+      inodes_used_percent: { lt: 90 }
+
+  # data disk: alert by absolute free space, after two runs in a row
+  - name: disk-data
+    module: disk
+    fail_after: 2
+    params: { path: /var/lib/postgresql }
+    check:
+      free: { gt: 20GB }
+      used_percent: { lt: 85 }
+
+  # by device name; also make sure it is mounted where expected
+  - name: disk-backup
+    module: disk
+    params: { path: /dev/mapper/vg-backup }
+    check:
+      mountpoint: /backup
+      used_percent: { lt: 95 }
+```
+
+A failure names the rule and the value:
+
+```
+FAIL   disk-root   (disk, 1ms)
+       used_percent: expected lt 90, got 93.4
+```
+
+---
+
+# docker module
+Source: https://alekzonder.github.io/onecheck/modules/docker
+
+Reports Docker containers, so you know that the containers which must serve
+are running and healthy, that nothing restarts in a loop or dies of running
+out of memory, and that no unknown container is running on the host.
+Works on Linux and macOS with Docker, Docker Desktop, OrbStack, Colima,
+rootless Docker and Podman (its Docker-compatible API).
+
+The module always returns the same fields: the list of containers that
+match the params, and their number. Params only narrow the list.
+
+## Params
+
+| Key | Required | Description |
+|---|---|---|
+| `name` | no | container name, exact (`nginx`) or a shell pattern (`app-*`), without the leading `/` |
+| `label` | no | `key` (the label is set) or `key=value`, e.g. `com.docker.compose.project=shop` |
+| `host` | no | where Docker is: `unix:///path/to/docker.sock` or `tcp://host:port`; found automatically when omitted |
+
+Without `name` and `label` every container is listed, running or not (like
+`docker ps -a`). With both, a container must match both. A filter that
+matches nothing gives `count: 0`, not an error.
+
+Patterns use the [`glob` syntax](/checks#glob-not_glob): `*`, `?`,
+`[abc]`, `[!abc]`.
+
+### Where Docker is
+
+When `host` is not set, the module takes the first of:
+
+1. the `DOCKER_HOST` environment variable;
+2. the current Docker context (`DOCKER_CONTEXT`, else `docker context use`
+   saved in `~/.docker/config.json`; `DOCKER_CONFIG` moves `~/.docker`). The
+   `default` context means "no context";
+3. the first socket that exists:
+   - `/var/run/docker.sock`
+   - `$XDG_RUNTIME_DIR/docker.sock` (rootless Docker)
+   - macOS: `~/.docker/run/docker.sock` (Docker Desktop),
+     `~/.orbstack/run/docker.sock`, `~/.colima/default/docker.sock`
+   - `$XDG_RUNTIME_DIR/podman/podman.sock`, `/run/podman/podman.sock`
+
+When onecheck runs from cron or a systemd timer, its environment usually has
+no `DOCKER_HOST` and maybe no `HOME`: set `host` in the rule if Docker is not
+at one of the default sockets.
+
+Only `unix://` and `tcp://` (plain HTTP) addresses are supported. A `tcp://`
+address without a port uses 2375. TLS (`DOCKER_TLS_VERIFY`, a context with
+TLS certificates) and `ssh://` are not supported and give an error.
+
+Every error names the address and where it came from:
+
+```
+docker at unix:///var/run/docker.sock (default socket): dial unix /var/run/docker.sock: connect: permission denied; add the user onecheck runs as to the docker group or run it as root
+```
+
+Reading the Docker socket is equivalent to root access on the host; give
+onecheck that access knowingly.
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `containers` | array | matching containers sorted by name |
+| `count` | number | number of matching containers |
+
+Each element of `containers` has all of these keys:
+
+| Key | Type | Value |
+|---|---|---|
+| `name` | string | container name, without the leading `/` |
+| `id` | string | short id (12 characters) |
+| `image` | string | image the container was created from, as written in `docker run` or compose: `nginx:1.27`, `registry.local/app:3` |
+| `state` | string | `created`, `running`, `paused`, `restarting`, `removing`, `exited`, `dead` |
+| `health` | string | `healthy`, `unhealthy`, `starting`; `none` when the container has no healthcheck |
+| `restart_count` | number | restarts done by the restart policy (`restart: always`, ...) |
+| `exit_code` | number | exit code of the last run; 0 while it runs |
+| `oom_killed` | bool | the last run was killed for running out of memory |
+| `uptime_seconds` | number | seconds since the container started, while it is `running` or `restarting`; otherwise 0 |
+| `labels` | object | container labels |
+
+Element keys are checked with paths (`containers.0.state`) or with
+[`every` / `some` and `path`](/checks#every-some). Unit literals do not
+work inside elements: write `uptime_seconds: { gt: 3600 }`, not `1h`.
+
+A rule that only checks `count` makes one request to Docker. A rule that
+checks `containers` asks Docker about each matching container too.
+
+## Recipes
+
+### A container must run
+
+```yaml
+- name: nginx
+  module: docker
+  params: { name: nginx }
+  check:
+    count: 1                                    # it exists
+    containers.0.state: running
+    containers.0.health: { not_equals: unhealthy }
+```
+
+`count: 1` first: without it a missing container would only show as a
+missing path.
+
+### No unknown containers
+
+Every running container must be allowed by its name, a name pattern or an
+image pattern. Allowing does not require: a container that is not running is
+not reported here (check required ones with the rule above).
+
+```yaml
+- name: no-unknown-containers
+  module: docker
+  check:
+    containers.#(state=="running")#:
+      every:
+        any:
+          - { path: name,  in: [nginx, postgres] }
+          - { path: name,  glob: "app-*" }
+          - { path: image, glob: "registry.local/*" }
+```
+
+Drop `#(state=="running")#` to require that stopped containers are known as
+well.
+
+### A whole compose project
+
+```yaml
+- name: shop
+  module: docker
+  params: { label: com.docker.compose.project=shop }
+  check:
+    count: { gte: 3 }
+    containers:
+      every:
+        - { path: state, equals: running }
+        - { path: health, not_equals: unhealthy }
+```
+
+### Crash loops and OOM kills
+
+```yaml
+- name: containers-stable
+  module: docker
+  check:
+    containers:
+      every:
+        - { path: restart_count, lt: 5 }
+        - { path: oom_killed, equals: false }
+```
+
+`restart_count` grows for the life of the container and is reset when it is
+recreated (a new deploy), so pick a limit above what a normal deploy cycle
+reaches.
+
+### Image of a container
+
+```yaml
+- name: api-version
+  module: docker
+  params: { name: api }
+  check:
+    containers.0.image: { glob: "registry.local/api:2.*" }
+```
+
+## Output
+
+```
+FAIL   no-unknown-containers  (docker, 140ms)  [transition: fail]
+       containers.#(state=="running")#.2: expected any [{"in":["nginx","postgres"],"path":"name"},{"glob":"app-*","path":"name"},{"glob":"registry.local/*","path":"image"}], got {"exit_code":0,"health":"none","id":"9c1e2b7d4a10","image":"xmrig/xmrig","name":"miner","oom_killed":false,"restart_count":0,"state":"running","uptime_seconds":312}
+FAIL   shop                   (docker, 110ms)  [transition: fail]
+       containers.1.state: expected equals "running", got "exited" (element {"exit_code":137,"health":"none","id":"3f2a90c1d5e7","image":"registry.local/shop-worker:4","name":"shop-worker-1","oom_killed":true,"restart_count":0,"state":"exited","uptime_seconds":0})
+```
+
+The index (`.2`, `.1`) is the position in the (filtered) list; the
+element's keys in the message (all but `labels`) tell which container it is.
+
+---
+
+# file module
+Source: https://alekzonder.github.io/onecheck/modules/file
+
+Inspects one path: a file, a directory or a symlink.
+
+## Params
+
+| Key | Required | Description |
+|---|---|---|
+| `path` | yes | the path to inspect |
+
+Glob patterns are not supported: one rule looks at one path.
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `exists` | bool | whether the path exists |
+| `type` | string | `file`, `dir`, `symlink` or `other` (socket, device, ...) |
+| `size` | **bytes** | file size; for a directory the total size of all files below it |
+| `age` | **duration** | time since the last modification |
+| `mode` | string | permission bits as four octal digits, e.g. `"0640"` |
+| `owner` | string | owner user name (the numeric id if it has no name) |
+| `group` | string | owner group name (the numeric id if it has no name) |
+| `content` | string | content of a regular file |
+| `count` | number | number of entries directly in a directory |
+| `target` | string | where a symlink points, exactly as stored in the link |
+
+**bytes** and **duration** fields accept unit literals in conditions:
+`size: { lt: 10MB }`, `age: { lt: 1h }`. See [Checks](/checks#gt-gte-lt-lte).
+
+Which fields are present:
+
+| The path is | Fields returned |
+|---|---|
+| missing | `exists: false` only |
+| a regular file | everything except `count` and `target` |
+| a directory | everything except `content` and `target` |
+| a symlink to something that exists | `type: symlink`, `target`, and all other fields describing **what the link points to** |
+| a dangling symlink | `exists: false`, `type: symlink`, `target` |
+
+A condition on a field that is not returned fails with "path is missing", so
+`size: { gt: 0 }` on a missing file fails as it should.
+
+Only the fields a rule uses are collected. In particular `content` is read,
+and a directory's total `size` is computed, only when `check` mentions them.
+
+`content` is limited by `run.max_field_size` (default `10MB`). A condition on
+a larger file ends the rule with status `error`; check `size` or raise the
+limit.
+
+A path that cannot be inspected at all (permission denied on a parent
+directory, unreadable file when `content` is requested) is an `error`, not a
+`fail`.
+
+## Examples
+
+```yaml
+rules:
+  # exists, right owner and permissions
+  - name: sshd-config
+    module: file
+    params: { path: /etc/ssh/sshd_config }
+    check:
+      exists: true
+      type: file
+      owner: root
+      mode: "0600"
+
+  # must not exist
+  - name: no-maintenance-flag
+    module: file
+    params: { path: /var/www/maintenance.flag }
+    check:
+      exists: false
+
+  # a backup was written during the last day and is not suspiciously small
+  - name: backup-fresh
+    module: file
+    params: { path: /backup/latest.tar.gz }
+    check:
+      exists: true
+      age: { lt: 25h }
+      size: { gt: 100MB }
+
+  # content: substring, regular expression
+  - name: nginx-listens-443
+    module: file
+    params: { path: /etc/nginx/nginx.conf }
+    check:
+      content:
+        contains: "listen 443"
+        not_matches: '(?m)^\s*server_tokens\s+on'
+
+  # content as JSON
+  - name: app-config
+    module: file
+    params: { path: /etc/app/config.json }
+    check:
+      content:
+        json:
+          assert:
+            - { path: db.host, equals: localhost }
+            - { path: features, type: array }
+
+  # directory: total size and number of entries
+  - name: spool-not-growing
+    module: file
+    params: { path: /var/spool/app }
+    check:
+      type: dir
+      size: { lt: 1GB }
+      count: { lt: 500 }
+
+  # a symlink points where it should
+  - name: current-release
+    module: file
+    params: { path: /srv/app/current }
+    check:
+      exists: true                       # the target exists
+      type: symlink
+      target: { starts_with: /srv/app/releases/ }
+```
+
+---
+
+# http module
+Source: https://alekzonder.github.io/onecheck/modules/http
+
+Makes one HTTP or HTTPS request.
+
+## Params
+
+| Key | Required | Default | Description |
+|---|---|---|---|
+| `url` | yes | | `http://` or `https://` URL |
+| `method` | no | `GET` | HTTP method |
+| `headers` | no | | request headers, a mapping of name to value |
+| `body` | no | | request body |
+| `follow_redirects` | no | `true` | follow redirects; with `false` the redirect response itself is returned |
+| `insecure_skip_verify` | no | `false` | do not verify the server's TLS certificate |
+
+The request is limited by the rule's `timeout`. Proxy settings are taken from
+the usual `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` environment variables.
+
+Secrets can be passed through the environment, see
+[Configuration](/configuration#environment-variables-in-params):
+
+```yaml
+headers:
+  Authorization: "Bearer ${API_TOKEN}"
+```
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `status` | number | HTTP status code |
+| `headers` | object | response headers; names in **lower case**, repeated headers joined with `, ` |
+| `body` | string | response body |
+| `duration` | **duration** | time from sending the request until the whole body was read |
+| `tls_expires_in` | **duration** | time until the server certificate expires; https only |
+
+**duration** fields accept unit literals: `duration: { lt: 500ms }`,
+`tls_expires_in: { gt: 14d }`.
+
+Address a single header as `headers.<name>`, always in lower case:
+`headers.content-type`.
+
+A response with any status code is a successful collection: `404` and `500`
+are values of `status` to be checked. The rule ends with status `error`, not
+`fail`, when no response could be obtained: DNS failure, connection refused,
+TLS handshake or certificate error, timeout.
+
+`body` is limited by `run.max_field_size` (default `10MB`); a condition on a
+larger body ends the rule with status `error`.
+
+The tail of `body` (the last `10k` by default) and the `headers` are saved in
+the rule's result on every run, also when no condition mentions them, so a
+failed `status: 200` can be investigated afterwards. Change the size with
+`output_tail`, or set `output_tail: 0` for responses that hold secrets, see
+[Output and results](/output-and-results#saved-output).
+
+`tls_expires_in` is absent for plain `http://` URLs, so a condition on it
+fails there.
+
+## Examples
+
+```yaml
+rules:
+  # status and substring
+  - name: site-up
+    module: http
+    timeout: 10s
+    params: { url: https://example.com/ }
+    check:
+      status: 200
+      body: { contains: "Welcome" }
+
+  # several acceptable statuses, headers, response time
+  - name: api-root
+    module: http
+    params: { url: https://api.example.com/ }
+    check:
+      status: { in: [200, 204] }
+      headers.content-type: { starts_with: application/json }
+      headers.strict-transport-security: { exists: true }
+      headers.x-powered-by: { exists: false }
+      duration: { lt: 1s }
+
+  # JSON body: values, presence of keys, array contents
+  - name: api-health
+    module: http
+    params:
+      url: https://api.example.com/health
+      headers: { Authorization: "Bearer ${API_TOKEN}" }
+    check:
+      status: 200
+      body:
+        json:
+          assert:
+            - { path: status, equals: ok }
+            - { path: version, exists: true }
+            - { path: checks.#, gte: 1 }
+            - { path: 'checks.#(state!="ok")#', length: 0 }
+
+  # JSON body validated with a JSON Schema
+  - name: api-contract
+    module: http
+    params: { url: https://api.example.com/v1/users/1 }
+    check:
+      body:
+        json:
+          schema:
+            type: object
+            required: [id, email, roles]
+            properties:
+              id: { type: integer }
+              email: { type: string, pattern: "@" }
+              roles: { type: array, items: { type: string } }
+
+  # POST with a body
+  - name: login-works
+    module: http
+    params:
+      url: https://example.com/api/login
+      method: POST
+      headers: { Content-Type: application/json }
+      body: '{"user":"probe","password":"${PROBE_PASSWORD}"}'
+    check:
+      status: 200
+      body: { json: { assert: [ { path: token, type: string } ] } }
+
+  # a redirect is in place
+  - name: http-redirects-to-https
+    module: http
+    params:
+      url: http://example.com/
+      follow_redirects: false
+    check:
+      status: { in: [301, 308] }
+      headers.location: { starts_with: "https://" }
+
+  # certificate lifetime
+  - name: certificate
+    module: http
+    params: { url: https://example.com/ }
+    check:
+      tls_expires_in: { gt: 14d }
+```
+
+---
+
+# memory module
+Source: https://alekzonder.github.io/onecheck/modules/memory
+
+Reports physical memory and swap usage of the host, so memory running out
+is noticed before the system starts swapping heavily or killing processes.
+Works on Linux and macOS.
+
+## Params
+
+None. `params` may be omitted.
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `total` | **bytes** | physical memory |
+| `available` | **bytes** | memory that can be given to programs without swapping |
+| `used` | **bytes** | `total` minus `available` |
+| `used_percent` | number | `used / total * 100` |
+| `swap_total` | **bytes** | swap size |
+| `swap_used` | **bytes** | swap in use |
+| `swap_free` | **bytes** | free swap |
+| `swap_used_percent` | number | `swap_used / swap_total * 100`; 0 when there is no swap |
+
+Percentages have two decimals.
+
+On Linux `available` is the kernel's `MemAvailable`: page cache and other
+memory the kernel can reclaim at once are not counted in `used`, as in the
+"available" column of `free`. A host with a large file cache therefore
+shows low `used_percent` even though little memory is "free"; that is
+normal.
+
+On macOS `available` is free plus inactive memory. `used` then still
+includes active file cache and compressed and wired memory, so it reads
+higher than "Memory Used" in Activity Monitor, often 75–90 % on an idle Mac.
+On Macs prefer a threshold on `available` (`available: { gt: 2GB }`) or a
+higher `used_percent` limit.
+
+macOS has no fixed swap: it adds swap files as needed, so `swap_total`
+grows and shrinks, and a high `swap_used_percent` there is less alarming
+than on Linux.
+
+**bytes** fields accept unit literals in conditions:
+`available: { gt: 1GB }`. See [Checks](/checks#gt-gte-lt-lte).
+
+Inside a container the module reports the host's memory, not the
+container's limit.
+
+Reading memory or swap failing is an `error`, not a `fail`.
+
+## Examples
+
+```yaml
+# conf.d/memory.yaml
+rules:
+  - name: memory
+    module: memory
+    check:
+      used_percent: { lt: 90 }
+      swap_used_percent: { lt: 50 }
+
+  # a small host: keep at least 512 MB available
+  - name: memory-available
+    module: memory
+    check:
+      available: { gt: 512MB }
+```
+
+A failure names the rule and the value:
+
+```
+FAIL   memory   (memory, 2ms)
+       used_percent: expected lt 90, got 93.41
+```
+
+---
+
+# ports module
+Source: https://alekzonder.github.io/onecheck/modules/ports
+
+Reports the TCP and UDP ports the host listens on, so you know that nothing
+unexpected is exposed and that every port which must serve is open.
+Linux only: the data comes from the kernel (`/proc/net`), the same that
+`ss -tuln` shows. No root is needed and no external command is run.
+
+A port cannot be reached from outside when nothing listens on an outside
+address, whatever the firewall says. Ports published by Docker are
+listening sockets too (of `docker-proxy`), so they are in the list even
+though Docker opens them past `ufw`.
+
+The module always returns the same fields: the list of listening sockets
+that match the params, and their number. Params only narrow the list.
+
+## Params
+
+| Key | Required | Description |
+|---|---|---|
+| `proto` | no | `tcp` or `udp`; both when omitted |
+| `interface` | no | only sockets bound to an address of this interface, e.g. `eth0`, or to all addresses |
+
+Without `interface` the list has every socket except those bound to a
+loopback address (`127.0.0.0/8`, `::1`): what other machines could reach.
+
+With `interface` the list has the sockets bound to an address of that
+interface and the sockets bound to all addresses (`0.0.0.0`, `::`), which
+answer on every interface. `interface: lo` lists what listens locally: the
+whole `127.0.0.0/8` network and `::1`. An interface that does not exist is
+an error.
+
+`interface` selects by the address a socket is bound to. It is not a
+guarantee about packets: Linux answers on one interface for an address of
+another unless the firewall or `rp_filter` forbids it. Sockets bound to a
+broadcast or multicast address, or to an address no interface has, are
+listed only without `interface`.
+
+## Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `listening` | array | listening sockets sorted by proto, port, address |
+| `count` | number | number of listening sockets |
+
+Each element of `listening` has all of these keys:
+
+| Key | Type | Value |
+|---|---|---|
+| `proto` | string | `tcp`, `udp` |
+| `port` | number | port number |
+| `address` | string | `0.0.0.0` or `::` for all addresses, otherwise the address the socket is bound to |
+| `family` | string | `ipv4`, `ipv6` |
+| `interface` | string | interface that has the address; `any` for all addresses; `""` when no interface has it |
+| `process` | string | name of the process that holds the socket; `""` when onecheck may not see it |
+
+TCP sockets are those in the LISTEN state. UDP has no such state: the list
+has the UDP sockets without a remote address, the ones `ss -uln` shows.
+
+A service that opens an IPv4 and an IPv6 socket gives two elements
+(`0.0.0.0` and `::`). Many programs open only the `::` socket and serve
+IPv4 through it: that is one element with `family: ipv6`, so do not use
+`family` to tell whether a port answers on IPv4. Several sockets on the same proto, address and port (worker
+processes) are one element and count once.
+
+`process` is filled for the processes onecheck may inspect: all of them as
+root, only its own user's otherwise. When several processes hold the
+socket, the one with the lowest pid is named: for a socket-activated
+service (`ssh.socket`, `docker.socket`) that is `systemd`. An address that
+two interfaces have is shown with the first interface by name. A rule that only checks `count` does
+not look processes up.
+
+## Recipes
+
+### No unknown ports
+
+Every listening socket must be an allowed one. Anything else is a failure
+that names the port, the address and the process.
+
+```yaml
+- name: no-unknown-ports
+  module: ports
+  check:
+    listening:
+      every:
+        any:
+          - { path: port, in: [22, 80, 443] }
+          - { path: port, gte: 60001, lte: 60010 }        # mosh
+```
+
+To allow a port only for one protocol or on one interface, put the
+conditions of one alternative into `all`:
+
+```yaml
+          - all:
+              - { path: port, equals: 51820 }
+              - { path: proto, equals: udp }
+          - all:
+              - { path: port, in: [8200, 8201] }
+              - { path: interface, equals: wg0 }          # only on the VPN
+```
+
+### A port must be open
+
+```yaml
+- name: web-ports
+  module: ports
+  params: { proto: tcp }
+  check:
+    listening.#.port: { contains: 443 }
+```
+
+`listening.#.port` is the list of port numbers. Write one rule per protocol,
+or select the protocol in the path:
+`listening.#(proto=="udp")#.port: { contains: 51820 }`.
+
+### Both in one rule
+
+```yaml
+- name: tcp-ports
+  module: ports
+  params: { proto: tcp }
+  check:
+    listening:
+      every: { path: port, in: [22, 80, 443] }
+    listening.#.port:
+      all:
+        - { contains: 80 }
+        - { contains: 443 }
+```
+
+### One interface
+
+```yaml
+- name: public-interface
+  module: ports
+  params: { interface: eth0, proto: tcp }
+  check:
+    listening:
+      every: { path: port, in: [22, 443] }
+```
+
+### A local service is up
+
+```yaml
+- name: postgres-listens
+  module: ports
+  params: { interface: lo, proto: tcp }
+  check:
+    listening.#.port: { contains: 5432 }
+```
+
+## Limits
+
+- **The firewall is not consulted.** A port that listens on `0.0.0.0` and
+  is hidden only by the firewall is in the list: allow it in the rule or
+  bind the service to `127.0.0.1`. A port that listens but is blocked by the
+  firewall still counts as open. A firewall of the cloud provider is not
+  visible from the host at all.
+- **UDP is noisier than TCP.** Programs open unconnected UDP sockets on
+  random ports for a short time (DNS clients, DHCP, mosh sessions). When a
+  "no unknown ports" rule fails now and then on UDP, check only TCP
+  (`proto: tcp`) or allow the port range.
+- A socket bound to a device rather than an address (`SO_BINDTODEVICE`) is
+  shown with the address it is bound to, usually `0.0.0.0`.
+- Port forwarding done only in the firewall (DNAT without a listening
+  socket, Docker with `userland-proxy: false`) is not seen.
+
+## Output
+
+```
+FAIL   no-unknown-ports  (ports, 20ms)  [transition: fail]
+       listening.3: expected any [{"in":[22,80,443],"path":"port"},{"gte":60001,"lte":60010,"path":"port"}], got {"address":"0.0.0.0","family":"ipv4","interface":"any","port":8080,"process":"docker-proxy","proto":"tcp"}
+FAIL   web-ports         (ports, 19ms)  [transition: fail]
+       listening.#.port: expected contains 443, got [22,22,80]
+```
+
+---
+
+# systemd module
+Source: https://alekzonder.github.io/onecheck/modules/systemd
+
+Reports the state of one systemd unit, so you know that services which must
+serve are running and start on boot, that units which must stay off are
+stopped and will not come back after a reboot, and that scheduled jobs
+(timers) really run and succeed.
+
+Works with any unit type: `service`, `timer`, `socket`, `mount`, `path`,
+`target`, ... It calls `systemctl show`, so it needs systemd; on other
+systems (macOS, Linux without systemd) every check is an `error`.
+
+## Params
+
+| Key | Required | Description |
+|---|---|---|
+| `unit` | yes | unit name, e.g. `nginx.service`, `backup.timer`, `docker.socket` |
+| `user` | no | `true` checks a unit of the user's own service manager (`systemctl --user`); default `false` |
+| `properties` | no | list of extra `systemctl show` property names, returned in the `properties` field |
+
+A name without a suffix (`nginx`) is understood by systemd as a service.
+Name exactly one unit: patterns (`*`, `?`, `[`) are rejected, because
+systemd would report several units at once. Escaped names such as
+`dev-disk-by\x2dlabel-root.device` work as `systemctl` shows them.
+
+`user: true` is for onecheck running as an ordinary user. The user's service
+manager must be running: for cron or a timer outside a login session enable
+lingering (`loginctl enable-linger <user>`). If `XDG_RUNTIME_DIR` is not set,
+the module uses `/run/user/<uid>`. Checking another user's units from root is
+not supported.
+
+One rule checks one unit; write one rule per unit.
+
+## Fields
+
+All units:
+
+| Field | Type | Description |
+|---|---|---|
+| `load_state` | string | `loaded`, `not-found`, `masked`, `bad-setting`, `error` |
+| `active_state` | string | `active`, `inactive`, `failed`, `activating`, `deactivating`, `reloading` |
+| `sub_state` | string | type-specific state: `running`, `exited`, `dead`, `waiting`, `listening`, ... |
+| `unit_file_state` | string | `enabled`, `disabled`, `static`, `masked`, `indirect`, `generated`, ...; empty string if systemd reports none (e.g. the unit does not exist) |
+| `result` | string | result of the unit's last run: `success`, `exit-code`, `signal`, `timeout`, `core-dump`, ... |
+| `description` | string | unit description |
+| `state_age` | **duration** | time since the last change of the active or sub state |
+
+Services:
+
+| Field | Type | Description |
+|---|---|---|
+| `restarts` | number | automatic restarts (`Restart=`) since the service was started: a crash loop shows here |
+| `main_pid` | number | main process id, 0 if not running |
+| `exit_status` | number | exit status of the last main process |
+
+Timers:
+
+| Field | Type | Description |
+|---|---|---|
+| `service` | string | the unit the timer starts |
+| `last_trigger_age` | **duration** | time since the timer last fired; missing if it has not fired |
+| `idle_age` | **duration** | time since the timer last fired or, if systemd does not know when it last fired (e.g. after a reboot without `Persistent=true`), since the timer was activated |
+| `next_trigger_in` | **duration** | time until the next calendar (`OnCalendar=`) run; missing if none is scheduled, so always missing for timers with only `OnBootSec=`/`OnActiveSec=`/`OnUnitActiveSec=` |
+| `service_result` | string | result of the last run of the started unit: `success`, `exit-code`, ... |
+| `service_exit_status` | number | exit status of the started service's last main process |
+| `service_active_state` | string | active state of the started unit |
+
+Raw:
+
+| Field | Type | Description |
+|---|---|---|
+| `properties` | object | `{Name: value}` for each name in `params.properties`; integers (sizes, counts, ids) as numbers, everything else as text exactly as `systemctl show` prints it (`infinity`, `yes`, `[not set]`); a name systemd does not know is missing |
+
+**duration** fields accept unit literals in conditions:
+`idle_age: { lt: 25h }`. See [Checks](/checks#gt-gte-lt-lte).
+
+### Which field to use
+
+- **Must run:** `active_state: active`. **Must be stopped:**
+  `active_state: { not_equals: active }` (a `failed` unit is not running
+  either). A typo in the unit name makes "must be stopped" pass, because a
+  unit that does not exist is not running: add `load_state: loaded` to
+  rules for units that must be installed.
+- **Starts on boot / must not:** `unit_file_state`. `enabled` starts on boot;
+  `disabled` and `masked` do not (`masked` cannot even be started by hand).
+  `static` units have no `[Install]` section and are started by something
+  else.
+- **Timer fires regularly:** prefer `idle_age` to `last_trigger_age`. A timer
+  without `Persistent=true` forgets when it last fired on every reboot;
+  `last_trigger_age` is then missing and a condition on it fails until the
+  timer fires again, up to a whole period after each boot. `idle_age` counts
+  from the timer's activation in that case, and still fails when an active
+  timer has not fired for longer than the threshold. When systemd knows the
+  last run, `idle_age` equals `last_trigger_age`, so restarting a timer that
+  stopped firing does not hide it.
+- **The job succeeds:** `service_result: success`. Prefer it to
+  `service_exit_status`: a unit may declare other exit codes successful
+  (`SuccessExitStatus=`), and `service_result` already accounts for that.
+  Before the job has run for the first time since boot it is `success`.
+- Anything else: name the property in `params.properties` and check
+  `properties.<Name>`, e.g. `properties.MemoryCurrent`.
+
+Which fields are present:
+
+- Service fields only for services, timer fields only for timers.
+- A unit that does not exist is not an error: systemd reports it with
+  `load_state: not-found` and `active_state: inactive` (and default values
+  such as `result: success`, `restarts: 0` for services). "Must run" then fails
+  with a clear message, "must be stopped" passes.
+- Older systemd versions do not have some properties (`NRestarts` appeared in
+  systemd 235); their fields are then missing and conditions on them fail
+  with "got nothing (path is missing)".
+
+`systemctl` missing or failing (e.g. no user service manager for
+`user: true`) is an `error`, not a `fail`; systemd's message is shown.
+
+A rule without `check` passes whenever the state could be read, as with any
+module, so always say what you expect.
+
+## Examples
+
+```yaml
+# conf.d/services.yaml
+rules:
+  # must run and start on boot
+  - name: nginx
+    module: systemd
+    params: { unit: nginx.service }
+    check:
+      active_state: active
+      unit_file_state: enabled
+
+  # must be stopped and not come back after a reboot
+  - name: telnet-off
+    module: systemd
+    params: { unit: telnet.socket }
+    check:
+      active_state: { not_equals: active }
+      unit_file_state: { in: [disabled, masked, ""] }
+
+  # running, and not restarting over and over
+  - name: app-stable
+    module: systemd
+    params: { unit: app.service }
+    check:
+      active_state: active
+      restarts: { lt: 3 }
+
+  # daily backup timer fires and the backup succeeds
+  - name: backup
+    module: systemd
+    params: { unit: backup.timer }
+    check:
+      active_state: active
+      idle_age: { lt: 25h }
+      service_result: success
+
+  # a property without its own field
+  - name: app-memory
+    module: systemd
+    params: { unit: app.service, properties: [MemoryCurrent] }
+    check:
+      properties.MemoryCurrent: { lt: 1073741824 }
+```
+
+`""` in `telnet-off` covers a unit that is not installed at all.
+`properties.MemoryCurrent` is a number (bytes), so `lt` works on it; it is
+`[not set]` when memory accounting is off, and `lt` then fails with "not
+applicable to a string". Numbers beyond the int64 range
+(`18446744073709551615`, systemd's "unlimited") stay text.
+
+A failure names the rule and the value:
+
+```
+FAIL   backup   (systemd, 12ms)
+       service_result: expected equals "success", got "exit-code"
+```
+
+---
+
+# Output and results
+Source: https://alekzonder.github.io/onecheck/output-and-results
+
+# Output and results
+
+A run reports its outcome in four places:
+
+| Where | What | For |
+|---|---|---|
+| exit code | did everything pass | cron, systemd, scripts |
+| stdout | every rule, or only the failing ones; text or JSON | people, pipelines |
+| `<paths.results>/<name>/<rule>.json` | the latest result of each rule | dashboards, other tools |
+| `<paths.events>/` | changes of state | notifications, see [State and events](/state-and-events) |
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | every rule that ran passed (also when there were no rules to run) |
+| `1` | at least one rule has status `fail` or `error` |
+| `2` | onecheck could not do its job: no or invalid config, unknown flag, another run of the same config in progress, results or events could not be written, the run was interrupted (SIGINT, SIGTERM) |
+
+The exit code follows the status of **this run**, not the confirmed state: a
+rule with `fail_after: 3` that failed once already gives `1`.
+
+With code `2` nothing is printed on stdout; the reason is on stderr, prefixed
+with `onecheck:`.
+
+An interrupted run (Ctrl-C, `systemctl stop`, shutdown) kills the running
+modules together with everything they started and records nothing: no
+results, no state changes, no events. A half-finished check says nothing
+about what it was checking, so it must not produce a `fail` event.
+
+## Flags
+
+```
+onecheck run [-c <config>] [-o text|json] [--only-failed] [--rule <name>]... [--tag <tag>]...
+```
+
+| Flag | Effect |
+|---|---|
+| `-o, --output text\|json` | output format, default `text` |
+| `--only-failed` | list only rules with status `fail` or `error`; the summary still counts all rules |
+| `--rule <name>` | run only this rule; repeatable |
+| `--tag <tag>` | run only rules carrying this tag; repeatable |
+| `--log-level <level>` | override `log.level` for this run and also print the log at that level on stderr |
+
+With both `--rule` and `--tag`, a rule runs if it matches either. Disabled
+rules (`enabled: false`) never run.
+
+Results are printed on stdout only. Log lines never go to stdout, so
+`onecheck -o json | jq` is safe; warnings and errors of onecheck itself go to
+stderr and to the log file.
+
+## Text output
+
+```
+PASS   passwd-sane   (file, 2ms)
+FAIL   disk-usage    (command, 14ms)  [state: pass, 1/3]
+       stdout: expected matches "^[0-7]\\d?%", got "91%\n"
+FAIL   api-health    (http, 124ms)  [transition: fail]
+       body json status: expected equals "ok", got "degraded"
+       body json /checks/1/state: schema violation: value must be 'ok'
+ERROR  cache-ping    (redis, 0ms)
+       module "redis" is not installed in /usr/lib/onecheck/modules (see: onecheck module install --help)
+
+4 rules: 1 passed, 2 failed, 1 errors
+```
+
+One line per rule: status, rule name, module and duration. Under a failing
+rule, one line per condition that did not hold; under an `error`, the reason.
+
+The note in brackets appears when the confirmed state needs explaining:
+
+| Note | Meaning |
+|---|---|
+| `[transition: fail]` | this run changed the state to `fail`; an event was written |
+| `[transition: recovered]` | this run changed the state back to `pass`; an event was written |
+| `[state: pass, 1/3]` | the run did not pass, but the state is still `pass`: 1 of `fail_after: 3` |
+| `[state: fail, 1/2]` | the run passed, but the state is still `fail`: 1 of `pass_after: 2` |
+
+## JSON output
+
+```sh
+onecheck -o json
+onecheck -o json --only-failed
+```
+
+```json
+{
+  "summary": { "total": 4, "passed": 1, "failed": 2, "errors": 1 },
+  "results": [
+    { "config": "main", "rule": "passwd-sane", "status": "pass", "...": "..." }
+  ]
+}
+```
+
+`summary` always counts every rule that ran. `results` lists them in config
+order; with `--only-failed` it contains only the non-passing ones (possibly
+`[]`). Each element has the [result format](#result-format) below.
+
+```sh
+# names of everything that is not fine
+onecheck -o json | jq -r '.results[] | select(.status != "pass") | .rule'
+
+# all failure messages
+onecheck -o json --only-failed | jq -r '.results[] | .rule as $r | (.failures[].message, .error // empty) | "\($r): \(.)"'
+```
+
+## Result files
+
+After every run each rule's result is stored at
+
+```
+<paths.results>/<config name>/<rule>.json
+```
+
+Passing and failing rules alike. There is no history: the file is replaced on
+each run (atomically, so a reader never sees a half-written file). The
+directory therefore always shows the current picture of all rules of a config.
+
+Results of rules that were removed from the config or disabled are deleted by
+the next full run (one without `--rule` / `--tag`).
+
+## Result format
+
+The same object is used in JSON output, in result files and inside events.
+
+```json
+{
+  "config": "main",
+  "rule": "api-health",
+  "module": "http",
+  "module_version": "1.2.0",
+  "tags": ["api"],
+  "status": "fail",
+  "state": "pass",
+  "transition": null,
+  "consecutive": 2,
+  "fail_after": 3,
+  "pass_after": 2,
+  "started_at": "2026-11-23T10:00:00.123Z",
+  "duration_ms": 124,
+  "failures": [
+    {
+      "path": "body",
+      "json_path": "status",
+      "operator": "equals",
+      "expected": "ok",
+      "actual": "degraded",
+      "message": "body json status: expected equals \"ok\", got \"degraded\""
+    }
+  ],
+  "error": null,
+  "output": {
+    "body": "{\"status\":\"degraded\",\"db\":\"timeout\"}",
+    "headers": { "content-type": "application/json", "server": "nginx" }
+  }
+}
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `config` | string | `name` of the config |
+| `rule` | string | rule name |
+| `module` | string | module name |
+| `module_version` | string | version of the module that ran; empty if the module could not be loaded |
+| `tags` | array | the rule's tags, `[]` if none |
+| `status` | string | outcome of this run: `pass`, `fail`, `error` |
+| `state` | string | confirmed state after this run: `pass`, `fail` |
+| `transition` | string or null | `fail` or `recovered` if this run changed the state, else `null` |
+| `consecutive` | number | how many runs in a row ended like this one (passing, or not passing) |
+| `fail_after`, `pass_after` | number | the rule's thresholds |
+| `started_at` | string | start of the check, UTC, RFC 3339 |
+| `duration_ms` | number | how long the check took |
+| `failures` | array | conditions that did not hold; `[]` unless `status` is `fail` |
+| `error` | string or null | why the check could not run; set only when `status` is `error` |
+| `output` | object | what the module saw, kept for diagnosis; `{}` if the module has no output fields or `output_tail` is `0`. See [Saved output](#saved-output) |
+
+Each element of `failures`:
+
+| Key | Description |
+|---|---|
+| `path` | the key of `check` the condition belongs to, e.g. `body`, `headers.content-type` |
+| `json_path` | location inside a parsed JSON document, for `json.assert` (GJSON path) and `json.schema` (JSON pointer); absent otherwise |
+| `operator` | the operator that did not hold, e.g. `equals`, `length gt`, `any`, `not`, `json`, `schema` |
+| `expected` | the operator's argument from the config |
+| `actual` | the value found; `null` if the path was missing; long values are cut to about 1 KB |
+| `message` | a ready-to-show sentence combining the above |
+
+## Saved output
+
+A failed `exit_code: 0` alone does not say what went wrong. So onecheck keeps
+the raw output of the check in the result, **whether or not a condition uses
+it and whether the rule passed or failed**:
+
+| Module | Saved fields |
+|---|---|
+| `command` | `stdout`, `stderr` |
+| `http` | `body`, `headers` |
+| `file` | nothing |
+
+Which fields are saved is decided by the module (it marks them as output, see
+[Module protocol](/module-protocol)); how much is kept is decided by the
+config:
+
+```yaml
+defaults:
+  output_tail: 10k      # default for every rule; this is also the built-in default
+
+rules:
+  - name: backup
+    module: command
+    output_tail: 100k   # more for this rule
+    params: { run: /opt/backup/run.sh }
+    check: { exit_code: 0 }
+
+  - name: token-check
+    module: http
+    output_tail: 0      # keep nothing: the response holds secrets
+    params: { url: https://example.com/token }
+    check: { status: 200 }
+```
+
+- The size is per field and accepts `k`, `m` (`1k`, `10k`, `1m`) as well as
+  `KB`, `MB`; a bare number is bytes.
+- A longer text is cut to its **last** `output_tail` bytes and then starts
+  with `…`: the end of the output is where the error usually is.
+- A value that is not text (`headers`) is kept whole if it fits into
+  `output_tail` and left out otherwise.
+- A command killed by its `timeout` still has the output it printed before
+  that in `output`, next to `status: error`.
+- Output is cut from what the module returned, which is itself limited by
+  `run.max_field_size` (default `10MB`): of a larger output only the first
+  `max_field_size` bytes are seen at all.
+
+The result file is overwritten by the next run, so `output` always belongs to
+the latest run. An [event](/state-and-events) embeds the result of the run
+that changed the state, including its `output`, so a notification can show
+why the check failed.
+
+Saved output may contain secrets (tokens in a response body, passwords
+printed by a script). Result directories are created with mode `0750` and
+files with `0640`; set `output_tail: 0` on rules whose output must not be
+stored.
+
+---
+
+# State and events
+Source: https://alekzonder.github.io/onecheck/state-and-events
+
+# State and events
+
+onecheck does not only tell whether a check passes right now. For every rule
+it keeps a **confirmed state** between runs and records each change of that
+state as an **event**. This is what a notification service builds on: it gets
+told when something broke and when it recovered, once per change, regardless
+of which module the rule uses.
+
+## Status and state
+
+Two different things are reported for each rule:
+
+| | Values | Meaning |
+|---|---|---|
+| `status` | `pass`, `fail`, `error` | the outcome of **this run** |
+| `state` | `pass`, `fail` | the **confirmed** state, which changes only after enough runs in a row |
+
+`status` values:
+
+- `pass` — every condition held;
+- `fail` — at least one condition did not hold;
+- `error` — the check could not be carried out: module missing or
+  incompatible, invalid rule, timeout, no connection, value too large.
+
+For the state, `error` counts the same as `fail`: a check that cannot run is
+not known to be healthy. The distinction stays visible in `status`.
+
+## Thresholds: `fail_after`, `pass_after`
+
+```yaml
+rules:
+  - name: api-health
+    module: http
+    fail_after: 3     # 3 non-passing runs in a row → state becomes fail
+    pass_after: 2     # 2 passing runs in a row → state becomes pass again
+    params: { url: https://example.com/health }
+    check: { status: 200 }
+```
+
+Both default to `1` (from `defaults` in the config), which means the state
+follows the status immediately.
+
+The rules:
+
+- In state `pass`, after `fail_after` consecutive runs that did not pass, the
+  state becomes `fail`.
+- In state `fail`, after `pass_after` consecutive passing runs, the state
+  becomes `pass`.
+- A run with the opposite outcome resets the count.
+- A rule seen for the first time starts in state `pass` without an event. If
+  it is failing, it goes to `fail` through the normal `fail_after` rule.
+
+Example with `fail_after: 3`, `pass_after: 2`:
+
+| Run | status | consecutive | state | event |
+|---|---|---|---|---|
+| 1 | pass | 1 | pass | |
+| 2 | fail | 1 | pass | |
+| 3 | fail | 2 | pass | |
+| 4 | pass | 1 | pass | (count reset) |
+| 5 | fail | 1 | pass | |
+| 6 | fail | 2 | pass | |
+| 7 | fail | 3 | **fail** | `fail` |
+| 8 | fail | 4 | fail | |
+| 9 | pass | 1 | fail | |
+| 10 | pass | 2 | **pass** | `recovered` |
+
+Thresholds count **runs**, not time: with a cron line every minute,
+`fail_after: 3` means roughly three minutes.
+
+The process exit code and the printed output follow `status`, not `state`: a
+rule that failed once with `fail_after: 3` already makes `onecheck` exit with
+`1`. The text output shows the gap, e.g. `[state: pass, 1/3]`.
+
+A manual `onecheck run --rule <name>` updates the state and writes events
+exactly like a scheduled run.
+
+## Events
+
+Every change of a rule's confirmed state writes one file into the event queue
+directory, `paths.events`:
+
+```
+/var/lib/onecheck/events/20261123T100200Z-main-api-health-fail.json
+```
+
+The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
+
+```json
+{
+  "id": "20261123T100200Z-main-api-health-fail",
+  "config": "main",
+  "rule": "api-health",
+  "transition": "fail",
+  "from": "pass",
+  "to": "fail",
+  "at": "2026-11-23T10:02:00Z",
+  "expires_at": "2026-11-24T10:02:00Z",
+  "result": {
+    "config": "main",
+    "rule": "api-health",
+    "module": "http",
+    "module_version": "1.2.0",
+    "tags": ["api"],
+    "status": "fail",
+    "state": "fail",
+    "transition": "fail",
+    "consecutive": 3,
+    "fail_after": 3,
+    "pass_after": 2,
+    "started_at": "2026-11-23T10:01:59.874Z",
+    "duration_ms": 124,
+    "failures": [
+      {
+        "path": "status",
+        "operator": "equals",
+        "expected": 200,
+        "actual": 503,
+        "message": "status: expected equals 200, got 503"
+      }
+    ],
+    "error": null,
+    "output": {
+      "body": "upstream connect error",
+      "headers": { "content-type": "text/plain" }
+    }
+  }
+}
+```
+
+| Key | Description |
+|---|---|
+| `id` | unique id, equal to the file name without `.json` |
+| `config` | `name` of the config the rule belongs to |
+| `rule` | rule name |
+| `transition` | `fail` (pass → fail) or `recovered` (fail → pass) |
+| `from`, `to` | confirmed state before and after |
+| `at` | when the change was recorded (UTC, RFC 3339) |
+| `expires_at` | `at` + `events.ttl`; after this the event may be deleted |
+| `result` | the full result of the run that caused the change, see [Output and results](/output-and-results#result-format) |
+
+For a `recovered` event, `result` is the passing run (`failures` is empty).
+For a `fail` event caused by a check that could not run, `result.status` is
+`error` and `result.error` holds the reason.
+
+### Consuming the queue
+
+The queue is a plain directory, shared by all configs on the host. The
+contract for a consumer (the notification service):
+
+1. List `*.json` files. Files are written atomically (temp file + rename), so
+   a visible `.json` file is always complete. Ignore names starting with `.`.
+2. Process the event.
+3. Delete the file.
+
+Ordering: file names start with a UTC timestamp, so a lexicographic sort is
+chronological.
+
+Delivery is at-least-once: if a consumer crashes between processing and
+deleting, it will see the event again. Use `id` to deduplicate.
+
+Events nobody consumed are removed by `onecheck logrotate` once `expires_at`
+has passed (`events.ttl`, default `24h`). See
+[Logging and logrotate](/logging-and-logrotate).
+
+### No lost transitions
+
+For each rule onecheck writes the event first and the new state after it. If
+the event cannot be written (disk full, no permission), the state is left
+unchanged and the run ends with exit code `2`; the next run detects the same
+change again and retries. A change of state is therefore either in the queue
+or reported as a failed run, never silently dropped.
+
+## Files
+
+| Path | Content | Lifetime |
+|---|---|---|
+| `<paths.state>/<name>/<rule>.json` | confirmed state and consecutive counters | internal, do not edit |
+| `<paths.state>/<name>/.lock`, `.owner` | run lock; which config file owns the name | internal |
+| `<paths.results>/<name>/<rule>.json` | latest result of the rule | overwritten every run |
+| `<paths.events>/<id>.json` | one state change | until consumed or expired |
+
+State and result files of a rule that was removed from the config (or
+disabled) are deleted by the next full run, that is a run without `--rule` or
+`--tag`. A state file that cannot be read is logged as a warning and the rule
+is treated as new.
+
+Renaming a rule starts it from scratch: the state is keyed by rule name.
+Changing a rule's module or conditions keeps its state.

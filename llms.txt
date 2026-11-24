@@ -1,0 +1,28 @@
+# onecheck
+
+> Simple, scriptable health checks for a server: YAML rules, cron, exit codes, result files and an event queue.
+
+## Docs
+
+- [onecheck](https://alekzonder.github.io/onecheck): Simple, scriptable health checks for a server.
+- [Getting started](https://alekzonder.github.io/onecheck/getting-started)
+- [Configuration](https://alekzonder.github.io/onecheck/configuration)
+- [Checks](https://alekzonder.github.io/onecheck/checks)
+- [State and events](https://alekzonder.github.io/onecheck/state-and-events)
+- [Output and results](https://alekzonder.github.io/onecheck/output-and-results)
+- [Module management](https://alekzonder.github.io/onecheck/module-management)
+- [Logging and logrotate](https://alekzonder.github.io/onecheck/logging-and-logrotate)
+- [Module protocol](https://alekzonder.github.io/onecheck/module-protocol)
+- [Development](https://alekzonder.github.io/onecheck/development)
+
+## Modules
+
+- [file module](https://alekzonder.github.io/onecheck/modules/file)
+- [http module](https://alekzonder.github.io/onecheck/modules/http)
+- [command module](https://alekzonder.github.io/onecheck/modules/command)
+- [disk module](https://alekzonder.github.io/onecheck/modules/disk)
+- [systemd module](https://alekzonder.github.io/onecheck/modules/systemd)
+- [cpu module](https://alekzonder.github.io/onecheck/modules/cpu)
+- [memory module](https://alekzonder.github.io/onecheck/modules/memory)
+- [docker module](https://alekzonder.github.io/onecheck/modules/docker)
+- [ports module](https://alekzonder.github.io/onecheck/modules/ports)
