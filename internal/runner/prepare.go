@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -122,8 +123,27 @@ func prepare(ctx context.Context, rule config.Rule, mods *moduleSet) prepared {
 	if p.err = validateParams(p.mod.schema, p.params); p.err != nil {
 		return p
 	}
+	if p.err = validateEventOutput(rule, p.mod); p.err != nil {
+		return p
+	}
 	p.check, p.err = match.Compile(rule.Check, p.mod.types)
 	return p
+}
+
+// validateEventOutput checks that event_output names output fields of the
+// module: only those are saved in a result and can be shown.
+func validateEventOutput(rule config.Rule, mod *loadedModule) error {
+	for _, name := range rule.EventOutput {
+		if slices.Contains(mod.outputs, name) {
+			continue
+		}
+		if len(mod.outputs) == 0 {
+			return fmt.Errorf("event_output: module %q has no output fields", rule.Module)
+		}
+		return fmt.Errorf("event_output: %q is not an output field of module %q (output fields: %s)",
+			name, rule.Module, strings.Join(mod.outputs, ", "))
+	}
+	return nil
 }
 
 func validateParams(schema *jsonschema.Schema, params json.RawMessage) error {

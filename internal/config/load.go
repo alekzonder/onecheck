@@ -32,6 +32,7 @@ type rawRule struct {
 	PassAfter   *int           `yaml:"pass_after"`
 	OutputTail  *Size          `yaml:"output_tail"`
 	EventParams *bool          `yaml:"event_params"`
+	EventOutput []string       `yaml:"event_output"`
 	RemindEvery *Duration      `yaml:"remind_every"`
 	Params      map[string]any `yaml:"params"`
 	Check       map[string]any `yaml:"check"`
@@ -205,6 +206,7 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 		return rule
 	}
 	rule.Module, rule.Tags, rule.Check = raw.Module, raw.Tags, raw.Check
+	rule.EventOutput = raw.EventOutput
 	if raw.Enabled != nil {
 		rule.Enabled = *raw.Enabled
 	}
@@ -240,7 +242,7 @@ func (c *Config) buildRule(name string, node *yaml.Node, source string) Rule {
 
 var ruleKeys = map[string]bool{
 	"name": true, "module": true, "tags": true, "enabled": true, "timeout": true,
-	"fail_after": true, "pass_after": true, "output_tail": true, "event_params": true, "remind_every": true, "params": true, "check": true,
+	"fail_after": true, "pass_after": true, "output_tail": true, "event_params": true, "event_output": true, "remind_every": true, "params": true, "check": true,
 	"<<": true, // YAML merge key
 }
 
@@ -254,7 +256,7 @@ func unknownRuleKeys(node *yaml.Node) error {
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if key := node.Content[i].Value; !ruleKeys[key] {
-			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, output_tail, event_params, remind_every, params, check)",
+			return fmt.Errorf("line %d: field %s not found in a rule (known: name, module, tags, enabled, timeout, fail_after, pass_after, output_tail, event_params, event_output, remind_every, params, check)",
 				node.Content[i].Line, key)
 		}
 	}

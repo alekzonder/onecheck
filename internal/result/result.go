@@ -85,6 +85,9 @@ type Event struct {
 	Params map[string]any `json:"params"`
 	// Redacted is true when the rule has event_params: false: a consumer
 	// must not show the details of the result to third parties.
-	Redacted bool   `json:"redacted"`
-	Result   Result `json:"result"`
+	Redacted bool `json:"redacted"`
+	// OutputFields names the keys of Result.Output the rule allows a
+	// consumer to show (event_output); empty by default and when Redacted.
+	OutputFields []string `json:"output_fields"`
+	Result       Result   `json:"result"`
 }

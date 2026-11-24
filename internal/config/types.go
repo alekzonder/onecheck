@@ -129,6 +129,9 @@ type Rule struct {
 	RawParams map[string]any
 	// EventParams is false when the rule's details must stay out of events.
 	EventParams bool
+	// EventOutput names the module's output fields a notification may
+	// show; the output itself is in the result either way.
+	EventOutput []string
 	// RemindEvery is how often the rule writes a reminder event while its
 	// confirmed state is fail; 0 = never.
 	RemindEvery time.Duration

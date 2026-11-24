@@ -578,10 +578,43 @@ rules:
 			t.Errorf("rule %s: err = %v, want an invalid duration", r.Name, r.Err)
 		}
 	}
-	if err := cfg.Rules[2].Err; err == nil || !strings.Contains(err.Error(), "event_params, remind_every, params") {
+	if err := cfg.Rules[2].Err; err == nil || !strings.Contains(err.Error(), "event_params, event_output, remind_every, params") {
 		t.Errorf("typo: err = %v, want the known keys including remind_every", err)
 	}
 	if _, err := Load(write(t, dir, "bad.yaml", "name: main\ndefaults: {remind_every: -1h}\n")); err == nil {
 		t.Error("a negative defaults.remind_every must make the config unusable")
+	}
+}
+
+func TestEventOutput(t *testing.T) {
+	cfg, err := Load(write(t, t.TempDir(), "config.yaml", `name: main
+rules:
+  - name: plain
+    module: command
+  - name: shown
+    module: command
+    event_output: [stderr, stdout]
+  - name: word
+    module: command
+    event_output: stderr
+  - name: typo
+    module: command
+    event_outputs: [stderr]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Rules
+	if r[0].Err != nil || len(r[0].EventOutput) != 0 {
+		t.Errorf("plain: %v %v", r[0].EventOutput, r[0].Err)
+	}
+	if r[1].Err != nil || strings.Join(r[1].EventOutput, ",") != "stderr,stdout" {
+		t.Errorf("shown: %v %v", r[1].EventOutput, r[1].Err)
+	}
+	if r[2].Err == nil {
+		t.Error("event_output must be a list")
+	}
+	if r[3].Err == nil || !strings.Contains(r[3].Err.Error(), "event_params, event_output, remind_every") {
+		t.Errorf("typo: %v", r[3].Err)
 	}
 }

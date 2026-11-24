@@ -256,20 +256,22 @@ func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.R
 // newEvent builds the event of the transition named in res.Transition.
 func newEvent(cfg *config.Config, rule config.Rule, res *result.Result, from string, next state.State, now time.Time) result.Event {
 	event := result.Event{
-		ID:         store.EventID(now, cfg.Name, res.Rule, *res.Transition),
-		Config:     cfg.Name,
-		Rule:       res.Rule,
-		Transition: *res.Transition,
-		From:       from,
-		To:         next.State,
-		At:         now,
-		ExpiresAt:  now.Add(time.Duration(cfg.Events.TTL)),
-		Since:      next.Since,
-		Redacted:   !rule.EventParams,
-		Result:     *res,
+		ID:           store.EventID(now, cfg.Name, res.Rule, *res.Transition),
+		Config:       cfg.Name,
+		Rule:         res.Rule,
+		Transition:   *res.Transition,
+		From:         from,
+		To:           next.State,
+		At:           now,
+		ExpiresAt:    now.Add(time.Duration(cfg.Events.TTL)),
+		Since:        next.Since,
+		Redacted:     !rule.EventParams,
+		OutputFields: []string{},
+		Result:       *res,
 	}
 	if rule.EventParams {
 		event.Params = rule.RawParams
+		event.OutputFields = append(event.OutputFields, rule.EventOutput...)
 	}
 	return event
 }
