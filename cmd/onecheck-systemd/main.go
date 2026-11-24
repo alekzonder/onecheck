@@ -1,5 +1,5 @@
 // Command onecheck-systemd is the onecheck module that reports the state of
-// a systemd unit.
+// a systemd unit, or the units in a given state.
 package main
 
 import (
@@ -12,9 +12,11 @@ import (
 const paramsSchema = `{
   "type": "object",
   "additionalProperties": false,
-  "required": ["unit"],
+  "oneOf": [{"required": ["unit"]}, {"required": ["state"]}],
   "properties": {
     "unit": {"type": "string", "minLength": 1, "description": "unit name, e.g. nginx.service or backup.timer; no patterns"},
+    "state": {"type": "string", "pattern": "^[a-z][a-z-]*$", "description": "instead of unit: list the units in this state, e.g. failed"},
+    "exclude": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "with state: shell patterns of unit names to leave out"},
     "user": {"type": "boolean", "description": "check a unit of the user's service manager (systemctl --user)"},
     "properties": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "extra systemctl show properties returned in the properties field"}
   }
@@ -24,7 +26,7 @@ var mod = module.Module{
 	Description: module.Description{
 		Name:         "systemd",
 		Version:      version.Version,
-		Description:  "Report the state of a systemd unit: active and enabled state, restarts, timer runs",
+		Description:  "Report the state of a systemd unit (active and enabled state, restarts, timer runs) or list the units in a state, e.g. failed",
 		ParamsSchema: json.RawMessage(paramsSchema),
 		Fields: map[string]module.FieldInfo{
 			"load_state":           {Type: module.TypeString, Description: "loaded, not-found, masked, bad-setting, error"},
@@ -44,6 +46,9 @@ var mod = module.Module{
 			"service_result":       {Type: module.TypeString, Description: "timer: result of the last run of the activated unit"},
 			"service_exit_status":  {Type: module.TypeNumber, Description: "timer: exit status of the activated service's last main process"},
 			"service_active_state": {Type: module.TypeString, Description: "timer: active state of the activated unit"},
+			"units":                {Type: module.TypeArray, Description: "with params.state: the units in that state sorted by name; each has name, load_state, active_state, sub_state, description"},
+			"names":                {Type: module.TypeArray, Description: "with params.state: the names of those units"},
+			"count":                {Type: module.TypeNumber, Description: "with params.state: number of those units"},
 			"properties":           {Type: module.TypeObject, Description: "values of params.properties: integers as numbers, everything else as printed by systemctl show"},
 		},
 	},

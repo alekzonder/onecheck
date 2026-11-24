@@ -815,3 +815,14 @@ func TestUnitLiteralsInElementsOfAModuleThatTypesThem(t *testing.T) {
 		t.Errorf("only the literal on an untyped key is an error, got %v", errs)
 	}
 }
+
+func TestInvalidParamsAreExplainedInWords(t *testing.T) {
+	e := newEnv(t)
+	cfg := e.load(`
+  - {name: no-path, module: file, check: {exists: true}}
+`)
+	errs := Validate(context.Background(), cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "missing property 'path'") || strings.Contains(errs[0].Error(), "&{") {
+		t.Errorf("errors = %v", errs)
+	}
+}

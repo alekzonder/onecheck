@@ -186,6 +186,7 @@ func TestDescribeListsFields(t *testing.T) {
 		"exit_status": module.TypeNumber, "service": module.TypeString, "last_trigger_age": module.TypeDuration,
 		"idle_age": module.TypeDuration, "next_trigger_in": module.TypeDuration, "service_result": module.TypeString,
 		"service_exit_status": module.TypeNumber, "service_active_state": module.TypeString, "properties": module.TypeObject,
+		"units": module.TypeArray, "names": module.TypeArray, "count": module.TypeNumber,
 	}
 	if len(d.Fields) != len(want) {
 		t.Errorf("describe has %d fields, want %d", len(d.Fields), len(want))

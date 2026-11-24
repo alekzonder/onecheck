@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
 	"github.com/alekzonder/onecheck/internal/config"
 	"github.com/alekzonder/onecheck/internal/match"
@@ -172,10 +174,13 @@ func validateParams(schema *jsonschema.Schema, params json.RawMessage) error {
 	return fmt.Errorf("invalid params: %s", strings.Join(msgs, "; "))
 }
 
+// schemaPrinter words schema violations: "missing property 'path'".
+var schemaPrinter = message.NewPrinter(language.English)
+
 func collectSchemaErrors(e *jsonschema.ValidationError, out *[]string) {
 	if len(e.Causes) == 0 {
 		loc := "/" + strings.Join(e.InstanceLocation, "/")
-		*out = append(*out, fmt.Sprintf("%s: %v", loc, e.ErrorKind))
+		*out = append(*out, fmt.Sprintf("%s: %s", loc, e.ErrorKind.LocalizedString(schemaPrinter)))
 		return
 	}
 	for _, cause := range e.Causes {

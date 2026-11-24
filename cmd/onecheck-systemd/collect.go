@@ -17,6 +17,8 @@ type params struct {
 	Unit       string   `json:"unit"`
 	User       bool     `json:"user"`
 	Properties []string `json:"properties"`
+	State      string   `json:"state"`
+	Exclude    []string `json:"exclude"`
 }
 
 // now is the clock; tests replace it.
@@ -29,6 +31,9 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	}
 	if err := p.validate(); err != nil {
 		return nil, err
+	}
+	if p.State != "" {
+		return collectList(ctx, p)
 	}
 	want := slices.Concat(commonProps, serviceProps, timerProps, p.Properties)
 	slices.Sort(want)
@@ -60,8 +65,15 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 }
 
 func (p params) validate() error {
-	if p.Unit == "" {
-		return errors.New("invalid params: unit is required")
+	switch {
+	case p.Unit == "" && p.State == "":
+		return errors.New("invalid params: unit or state is required")
+	case p.Unit != "" && p.State != "":
+		return errors.New("invalid params: give unit (one unit) or state (a list of units), not both")
+	case p.State != "":
+		return p.validateList()
+	case len(p.Exclude) > 0:
+		return errors.New("invalid params: exclude works with state, not with unit")
 	}
 	// systemctl show expands patterns and prints every matching unit.
 	if strings.ContainsAny(p.Unit, "*?[") {
@@ -71,6 +83,16 @@ func (p params) validate() error {
 		if !propertyName.MatchString(name) {
 			return fmt.Errorf("invalid params: property %q is not a systemd property name", name)
 		}
+	}
+	return nil
+}
+
+func (p params) validateList() error {
+	if !stateName.MatchString(p.State) {
+		return fmt.Errorf("invalid params: state %q is not a systemd state name", p.State)
+	}
+	if len(p.Properties) > 0 {
+		return errors.New("invalid params: properties works with unit, not with state")
 	}
 	return nil
 }
