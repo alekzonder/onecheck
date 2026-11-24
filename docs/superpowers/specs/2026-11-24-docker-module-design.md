@@ -101,9 +101,10 @@ names: { some: { glob: "web-*" } }
   One failure: `<path>: expected some <condition>, got <array>`.
 - A value that is not an array fails ("not applicable to a <type>"); a
   missing path fails.
-- When an element fails an `any`, the failure's actual value is the whole
-  element (cut to 1 KiB), so the offending container's name and image are in
-  the message.
+- Failures about an object element show its scalar keys (nested objects
+  such as labels left out) so the container is named: an `any` failure as
+  its actual value, other failures as an `(element {...})` note. (Changed
+  after review: the whole element with labels overflowed the 1 KiB cut.)
 
 "No strangers":
 

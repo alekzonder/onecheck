@@ -161,16 +161,32 @@ func focus(v value, n node) value {
 	}
 	keys := map[string]struct{}{}
 	referencedKeys(n, keys)
-	if len(keys) == 0 {
-		return v
-	}
-	out := make(map[string]any, len(keys))
+	out := scalars(obj)
+	found := false
 	for k := range keys {
 		if val, has := obj[k]; has {
 			out[k] = val
+			found = true
 		}
 	}
+	if !found {
+		return v
+	}
 	return value{v: out, exists: true}
+}
+
+// scalars returns the keys of an object whose values are not objects or
+// arrays: the element's identity (name, id, ...) without bulky parts.
+func scalars(obj map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, val := range obj {
+		switch val.(type) {
+		case map[string]any, []any:
+		default:
+			out[k] = val
+		}
+	}
+	return out
 }
 
 func referencedKeys(n node, keys map[string]struct{}) {
@@ -198,7 +214,7 @@ func (n notNode) missingAware() bool { return n.inner.missingAware() }
 func (n notNode) eval(r recorder, v value) bool {
 	// A negated condition on an absent path only holds when the condition
 	// itself is about existence; otherwise missing data would pass silently.
-	if !v.exists && !n.inner.missingAware() {
+	if (!v.exists && !n.inner.missingAware()) || (v.exists && missingIn(n.inner, v)) {
 		r.fail("not", n.raw, v, "")
 		return false
 	}
@@ -207,6 +223,31 @@ func (n notNode) eval(r recorder, v value) bool {
 		return false
 	}
 	return true
+}
+
+// missingIn reports whether a condition looks through "path" at a value
+// that is absent, where it is not about existence: negating it would let
+// missing data pass.
+func missingIn(n node, v value) bool {
+	switch x := n.(type) {
+	case pathNode:
+		sub := x.lookup(v)
+		if !sub.exists {
+			return !x.inner.missingAware()
+		}
+		return missingIn(x.inner, sub)
+	case allNode:
+		for _, c := range x {
+			if missingIn(c, v) {
+				return true
+			}
+		}
+	case anyNode:
+		return missingIn(x.children, v)
+	case notNode:
+		return missingIn(x.inner, v)
+	}
+	return false
 }
 
 type lengthNode struct {
@@ -258,15 +299,19 @@ type pathNode struct {
 
 func (n pathNode) missingAware() bool { return n.inner.missingAware() }
 
-func (n pathNode) eval(r recorder, v value) bool {
-	sub := value{}
-	if v.exists {
-		data, err := json.Marshal(v.v)
-		if err == nil {
-			sub = lookup(data, n.path)
-		}
+func (n pathNode) lookup(v value) value {
+	if !v.exists {
+		return value{}
 	}
-	return n.inner.eval(r.child(n.path), sub)
+	data, err := json.Marshal(v.v)
+	if err != nil {
+		return value{}
+	}
+	return lookup(data, n.path)
+}
+
+func (n pathNode) eval(r recorder, v value) bool {
+	return n.inner.eval(r.child(n.path), n.lookup(v))
 }
 
 // elements returns the array a condition on elements applies to, or records
@@ -298,11 +343,33 @@ func (n everyNode) eval(r recorder, v value) bool {
 		return false
 	}
 	for i, el := range arr {
+		start := len(*r.out)
 		if !n.inner.eval(r.child(strconv.Itoa(i)), value{v: el, exists: true}) {
 			ok = false
+			identify(*r.out, start, el)
 		}
 	}
 	return ok
+}
+
+// identify appends the element's scalar keys to failures recorded for it,
+// so a message about "containers.1.state" also says which container that
+// is. Failures of "any" already show the element.
+func identify(failures []Failure, start int, el any) {
+	obj, isObj := el.(map[string]any)
+	if !isObj {
+		return
+	}
+	id := scalars(obj)
+	if len(id) == 0 {
+		return
+	}
+	note := " (element " + toJSON(cut(id)) + ")"
+	for j := start; j < len(failures); j++ {
+		if failures[j].Operator != "any" {
+			failures[j].Message += note
+		}
+	}
 }
 
 // someNode holds when its condition holds for at least one element.

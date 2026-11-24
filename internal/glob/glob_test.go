@@ -1,6 +1,9 @@
 package glob
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCompile(t *testing.T) {
 	cases := []struct {
@@ -42,6 +45,28 @@ func TestCompileMalformed(t *testing.T) {
 	for _, p := range []string{"[", "app-[a", "[!"} {
 		if _, err := Compile(p); err == nil {
 			t.Errorf("Compile(%q) must fail", p)
+		}
+	}
+}
+
+func TestCompileReversedRangeIsWrapped(t *testing.T) {
+	_, err := Compile("[z-a]")
+	if err == nil || !strings.Contains(err.Error(), `invalid pattern "[z-a]"`) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestCompileClassEdges(t *testing.T) {
+	for _, c := range []struct {
+		p, s string
+		want bool
+	}{{"[a-]", "-", true}, {"[a-]", "b", false}, {`[\]`, `\`, true}, {"[^a]", "^", true}} {
+		re, err := Compile(c.p)
+		if err != nil {
+			t.Fatalf("%q: %v", c.p, err)
+		}
+		if re.MatchString(c.s) != c.want {
+			t.Errorf("%q vs %q", c.p, c.s)
 		}
 	}
 }

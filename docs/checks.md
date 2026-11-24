@@ -252,13 +252,17 @@ tags: { some: { glob: "env-*" } }          # at least one element
 A value that is not an array, or a missing path, does not hold.
 
 `every` reports each failing element separately, with its index in the
-path: `containers.2.state: expected equals "running", got "exited"`. When an
-element fails an `any`, the message shows the element's keys that the
-conditions look at through `path`, so you see which one it was:
+path. For an element that is an object the message also shows its simple
+keys (strings, numbers, booleans; nested objects such as labels are left
+out), so you see which element it was:
 
 ```
-containers.#(state=="running")#.1: expected any [...], got {"image":"xmrig/xmrig","name":"miner"}
+containers.2.state: expected equals "running", got "exited" (element {"id":"3f2a…","name":"old","state":"exited",...})
+containers.#(state=="running")#.1: expected any [...], got {"id":"9c1e…","image":"xmrig/xmrig","name":"miner",...}
 ```
+
+The index counts elements of the array the condition is applied to; after a
+query such as `#(state=="running")#` that is the filtered array.
 
 `some` reports one failure with the whole array.
 

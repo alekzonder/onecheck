@@ -161,3 +161,44 @@ func TestResolveUnsupportedScheme(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestResolveRejectsTLS(t *testing.T) {
+	h := newHostEnv(t, "linux")
+	h.vars["DOCKER_HOST"] = "tcp://box:2376"
+	h.vars["DOCKER_TLS_VERIFY"] = "1"
+	if _, err := h.resolve(""); err == nil || !strings.Contains(err.Error(), "TLS") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestResolveRejectsTLSContext(t *testing.T) {
+	h := newHostEnv(t, "linux")
+	cfg := filepath.Join(h.home, ".docker")
+	writeConfig(t, cfg, "secure")
+	writeContext(t, cfg, "secure", "tcp://box:2376")
+	sum := sha256.Sum256([]byte("secure"))
+	if err := os.MkdirAll(filepath.Join(cfg, "contexts", "tls", hex.EncodeToString(sum[:]), "docker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.resolve(""); err == nil || !strings.Contains(err.Error(), "TLS") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestResolveNormalizesTCP(t *testing.T) {
+	h := newHostEnv(t, "linux")
+	for in, want := range map[string]string{"tcp://box": "tcp://box:2375", "tcp://box:2375/": "tcp://box:2375", "tcp://10.0.0.1:1234": "tcp://10.0.0.1:1234"} {
+		ep, err := h.resolve(in)
+		wantEndpoint(t, ep, err, want, "params.host")
+	}
+}
+
+func TestResolveWithoutHome(t *testing.T) {
+	h := newHostEnv(t, "darwin")
+	h.home = ""
+	h.exists[".docker/run/docker.sock"] = true
+	_, err := h.resolve("")
+	if err == nil || strings.Contains(err.Error(), ".docker/run") {
+		t.Errorf("home-based places must be skipped without a home: %v", err)
+	}
+}

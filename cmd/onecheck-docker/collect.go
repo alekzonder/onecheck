@@ -19,7 +19,10 @@ import (
 // The environment is reached through these variables so tests can replace it.
 var (
 	resolve = func(param string) (endpoint, error) {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "" // no HOME: skip ~/.docker and the macOS sockets
+		}
 		return resolveHost(param, os.Getenv, home, runtime.GOOS, fileExists)
 	}
 	now = time.Now
@@ -43,11 +46,15 @@ type listItem struct {
 	Labels map[string]string `json:"Labels"`
 }
 
+// name is the container's own name; with legacy links Names also holds
+// aliases such as "/app/db", which have a second slash.
 func (l listItem) name() string {
-	if len(l.Names) == 0 {
-		return ""
+	for _, n := range l.Names {
+		if n = strings.TrimPrefix(n, "/"); !strings.Contains(n, "/") {
+			return n
+		}
 	}
-	return strings.TrimPrefix(l.Names[0], "/")
+	return ""
 }
 
 // inspect is the part of GET /containers/{id}/json the module reports.

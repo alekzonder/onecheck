@@ -43,8 +43,9 @@ When onecheck runs from cron or a systemd timer, its environment usually has
 no `DOCKER_HOST` and maybe no `HOME`: set `host` in the rule if Docker is not
 at one of the default sockets.
 
-Only `unix://` and `tcp://` (plain HTTP) addresses are supported; TLS and
-`ssh://` are not.
+Only `unix://` and `tcp://` (plain HTTP) addresses are supported. A `tcp://`
+address without a port uses 2375. TLS (`DOCKER_TLS_VERIFY`, a context with
+TLS certificates) and `ssh://` are not supported and give an error.
 
 Every error names the address and where it came from:
 
@@ -166,10 +167,10 @@ reaches.
 
 ```
 FAIL   no-unknown-containers  (docker, 140ms)  [transition: fail]
-       containers.#(state=="running")#.2: expected any [{"in":["nginx","postgres"],"path":"name"},{"glob":"app-*","path":"name"},{"glob":"registry.local/*","path":"image"}], got {"image":"xmrig/xmrig","name":"miner"}
+       containers.#(state=="running")#.2: expected any [{"in":["nginx","postgres"],"path":"name"},{"glob":"app-*","path":"name"},{"glob":"registry.local/*","path":"image"}], got {"exit_code":0,"health":"none","id":"9c1e2b7d4a10","image":"xmrig/xmrig","name":"miner","oom_killed":false,"restart_count":0,"state":"running","uptime_seconds":312}
 FAIL   shop                   (docker, 110ms)  [transition: fail]
-       containers.1.state: expected equals "running", got "exited"
+       containers.1.state: expected equals "running", got "exited" (element {"exit_code":137,"health":"none","id":"3f2a90c1d5e7","image":"registry.local/shop-worker:4","name":"shop-worker-1","oom_killed":true,"restart_count":0,"state":"exited","uptime_seconds":0})
 ```
 
-The index (`.2`, `.1`) is the position in the list; the element's keys in
-the message tell which container it is.
+The index (`.2`, `.1`) is the position in the (filtered) list; the
+element's keys in the message (all but `labels`) tell which container it is.

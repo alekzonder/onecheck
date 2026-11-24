@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,9 @@ func (e endpoint) String() string { return fmt.Sprintf("docker at %s (%s)", e.ad
 func resolveHost(param string, env func(string) string, home, goos string, exists func(string) bool) (endpoint, error) {
 	if param != "" {
 		return checked(endpoint{param, "params.host"})
+	}
+	if env("DOCKER_TLS_VERIFY") != "" {
+		return endpoint{}, fmt.Errorf("DOCKER_TLS_VERIFY is set, but TLS connections to Docker are not supported; use a unix socket or plain tcp:// in params.host")
 	}
 	if h := env("DOCKER_HOST"); h != "" {
 		return checked(endpoint{h, "DOCKER_HOST"})
@@ -49,7 +53,7 @@ func socketCandidates(env func(string) string, home, goos string) []string {
 	if xdg != "" {
 		out = append(out, filepath.Join(xdg, "docker.sock"))
 	}
-	if goos == "darwin" {
+	if goos == "darwin" && home != "" {
 		out = append(out,
 			filepath.Join(home, ".docker/run/docker.sock"),
 			filepath.Join(home, ".orbstack/run/docker.sock"),
@@ -65,11 +69,14 @@ func socketCandidates(env func(string) string, home, goos string) []string {
 // than "default" is selected.
 func fromContext(env func(string) string, home string) (endpoint, bool, error) {
 	dir := env("DOCKER_CONFIG")
-	if dir == "" {
+	if dir == "" && home != "" {
 		dir = filepath.Join(home, ".docker")
 	}
 	name := env("DOCKER_CONTEXT")
-	if name == "" {
+	if name != "" && dir == "" {
+		return endpoint{}, false, fmt.Errorf("docker context %q: no home directory or DOCKER_CONFIG to find it in", name)
+	}
+	if name == "" && dir != "" {
 		var cfg struct {
 			CurrentContext string `json:"currentContext"`
 		}
@@ -99,15 +106,34 @@ func fromContext(env func(string) string, home string) (endpoint, bool, error) {
 	if err := json.Unmarshal(data, &meta); err != nil || meta.Endpoints["docker"].Host == "" {
 		return endpoint{}, false, fmt.Errorf("docker context %q: no docker endpoint in %s", name, path)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "contexts", "tls", hex.EncodeToString(sum[:]), "docker")); err == nil {
+		return endpoint{}, false, fmt.Errorf("docker context %q uses TLS, which is not supported; set params.host to a unix socket or plain tcp:// address", name)
+	}
 	ep, err := checked(endpoint{meta.Endpoints["docker"].Host, "docker context " + name})
 	return ep, true, err
 }
 
-// checked rejects addresses the module cannot talk to.
+// checked rejects addresses the module cannot talk to and normalizes tcp
+// ones to host:port (default port 2375, like the docker CLI).
 func checked(ep endpoint) (endpoint, error) {
+	bad := fmt.Errorf("unsupported docker host %q from %s: use unix:///path or tcp://host:port", ep.addr, ep.source)
 	scheme, rest, ok := strings.Cut(ep.addr, "://")
-	if !ok || rest == "" || (scheme != "unix" && scheme != "tcp") {
-		return endpoint{}, fmt.Errorf("unsupported docker host %q from %s: use unix:///path or tcp://host:port", ep.addr, ep.source)
+	if !ok || rest == "" {
+		return endpoint{}, bad
 	}
-	return ep, nil
+	switch scheme {
+	case "unix":
+		return ep, nil
+	case "tcp":
+		hostport, _, _ := strings.Cut(rest, "/")
+		if hostport == "" {
+			return endpoint{}, bad
+		}
+		if _, _, err := net.SplitHostPort(hostport); err != nil {
+			hostport = net.JoinHostPort(hostport, "2375")
+		}
+		ep.addr = "tcp://" + hostport
+		return ep, nil
+	}
+	return endpoint{}, bad
 }

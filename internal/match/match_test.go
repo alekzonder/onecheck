@@ -502,3 +502,39 @@ func TestAnyOnElementShowsReferencedKeys(t *testing.T) {
 		t.Errorf("failures = %+v", got)
 	}
 }
+
+func TestNotPathMissingFails(t *testing.T) {
+	fields := `{"c": [{"name": "a"}, {"name": "b", "health": "healthy"}]}`
+	if got := evalOn(t, fields, `c.0: {not: {path: health, equals: unhealthy}}`); len(got) != 1 {
+		t.Errorf("missing sub-path under not must fail: %+v", got)
+	}
+	if got := evalOn(t, fields, `c: {every: {not: {path: health, equals: unhealthy}}}`); len(got) != 1 {
+		t.Errorf("every: %+v", got)
+	}
+	if got := evalOn(t, fields, `c.1: {not: {path: health, equals: unhealthy}}`); len(got) != 0 {
+		t.Errorf("present sub-path: %+v", got)
+	}
+	if got := evalOn(t, fields, `c.0: {not: {path: health, exists: true}}`); len(got) != 0 {
+		t.Errorf("exists is missing-aware: %+v", got)
+	}
+}
+
+func TestEveryFailureShowsElementScalars(t *testing.T) {
+	fields := `{"c": [{"name": "web", "image": "y", "state": "exited", "labels": {"a": "b"}}]}`
+	got := evalOn(t, fields, `c: {every: {any: [{path: image, glob: "registry.local/*"}]}}`)
+	if len(got) != 1 || !strings.Contains(got[0].Message, `"name":"web"`) || strings.Contains(got[0].Message, `"labels"`) {
+		t.Errorf("any: %+v", got)
+	}
+	got = evalOn(t, fields, `c: {every: {path: state, equals: running}}`)
+	if len(got) != 1 || !strings.Contains(got[0].Message, `"name":"web"`) {
+		t.Errorf("leaf: %+v", got)
+	}
+}
+
+func TestFocusFallsBackToWholeElement(t *testing.T) {
+	fields := `{"c": [{"labels": {"a": "b"}}]}`
+	got := evalOn(t, fields, `c: {every: {any: [{path: "@this", equals: 1}]}}`)
+	if len(got) != 1 || !strings.Contains(got[0].Message, `"labels"`) {
+		t.Errorf("failures = %+v", got)
+	}
+}

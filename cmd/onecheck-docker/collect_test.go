@@ -309,3 +309,10 @@ func TestCollectUnreachableMessageIsShort(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestListItemNameSkipsLinkAliases(t *testing.T) {
+	l := listItem{Names: []string{"/app/db", "/db"}}
+	if l.name() != "db" {
+		t.Errorf("name = %q", l.name())
+	}
+}

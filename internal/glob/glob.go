@@ -34,7 +34,11 @@ func Compile(pattern string) (*regexp.Regexp, error) {
 		}
 	}
 	b.WriteString(`$`)
-	return regexp.Compile(b.String())
+	re, err := regexp.Compile(b.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid pattern %q: %w", pattern, err)
+	}
+	return re, nil
 }
 
 // parseClass reads a character class starting at runes[start] == '[' and
