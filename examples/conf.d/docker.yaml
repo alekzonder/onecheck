@@ -1,0 +1,25 @@
+# Docker containers. Set params.host if Docker is not at a default socket
+# (onecheck from cron usually has no DOCKER_HOST).
+rules:
+  - name: postgres-container
+    module: docker
+    tags: [docker]
+    params:
+      name: postgres
+    check:
+      count: 1                                  # it exists
+      containers.0.state: running
+      containers.0.health: { not_equals: unhealthy }
+
+  - name: shop-stack
+    module: docker
+    tags: [docker]
+    params:
+      label: com.docker.compose.project=shop
+    check:
+      count: { gte: 3 }
+      containers:
+        every:
+          - { path: state, equals: running }
+          - { path: restart_count, lt: 5 }
+          - { path: oom_killed, equals: false }

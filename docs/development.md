@@ -100,8 +100,11 @@ cli.run
 - Module management is tested against an in-memory GitHub client
   (`internal/install`) and against a local HTTP server speaking the GitHub
   API shape (`internal/github`, `internal/cli`).
-- `examples/config.yaml` is loaded and validated by
-  `TestExamplesLoadAndValidate`, so examples cannot drift from the code.
+- `examples/config.yaml` (with its `conf.d/` includes) is loaded and
+  validated against all bundled modules by `TestExamplesLoadAndValidate`, so
+  examples cannot drift from the code. The test also fails when a bundled
+  module (`cmd/onecheck-<name>`) has no example rule: a new module comes with
+  an example.
 - Tests must not use the network and must not write outside `t.TempDir()`.
 
 Run one package or one test:

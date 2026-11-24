@@ -65,13 +65,65 @@ rules:
       size: { lt: 5GB }
       count: { lt: 10000 }
 
+  - name: disk-root
+    module: disk
+    tags: [disk]
+    params:
+      path: /
+    check:
+      used_percent: { lt: 90 }
+      inodes_used_percent: { lt: 90 }
+
+  - name: disk-data
+    module: disk
+    tags: [disk]
+    fail_after: 2
+    params:
+      path: /var/lib       # any path inside the filesystem, or a device
+    check:
+      free: { gt: 5GB }
+
   - name: load-average
-    module: command
+    module: cpu
     tags: [system]
     fail_after: 3        # three bad runs in a row before an event is written
     pass_after: 2
+    check:
+      load5_per_core: { lt: 1.5 }   # answers at once: no *_percent field is checked
+
+  - name: cpu-busy
+    module: cpu
+    tags: [system]
+    fail_after: 3
     params:
-      run: "cut -d' ' -f1 /proc/loadavg"
+      window: 5s         # CPU usage is measured over this time
+    check:
+      usage_percent: { lt: 90 }
+
+  - name: memory
+    module: memory
+    tags: [system]
+    check:
+      used_percent: { lt: 90 }
+      swap_used_percent: { lt: 50 }
+
+  - name: no-unknown-ports
+    module: ports
+    tags: [security]
+    params:
+      proto: tcp
+    check:
+      listening:          # every port reachable from outside must be allowed
+        every:
+          any:
+            - { path: port, in: [22, 80, 443] }
+
+  # Things no module reports are checked with "command".
+  - name: clock-synced
+    module: command
+    tags: [system]
+    params:
+      argv: [timedatectl, show, --property=NTPSynchronized, --value]
     check:
       exit_code: 0
-      stdout: { matches: '^[0-3]\.' }
+      stdout: "yes\n"

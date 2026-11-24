@@ -34,10 +34,40 @@ rules:
             required: [status, version]
 
   - name: nginx-active
+    module: systemd
+    tags: [web]
+    params:
+      unit: nginx.service
+    check:
+      active_state: active
+      unit_file_state: enabled      # starts on boot
+      restarts: { lt: 3 }           # not restarting in a loop
+
+  - name: nginx-config-valid
     module: command
     tags: [web]
     params:
-      argv: [systemctl, is-active, nginx]
+      argv: [nginx, -t]
     check:
       exit_code: 0
-      stdout: { matches: '(?m)^active$' }   # (?m): $ matches before the trailing newline
+
+  - name: web-ports
+    module: ports
+    tags: [web]
+    params:
+      proto: tcp
+    check:
+      listening.#.port:
+        all:
+          - { contains: 80 }
+          - { contains: 443 }
+
+  - name: certbot-renew
+    module: systemd
+    tags: [web]
+    params:
+      unit: certbot.timer
+    check:
+      active_state: active
+      idle_age: { lt: 25h }         # fired within the last day
+      service_result: success       # and the renewal succeeded
