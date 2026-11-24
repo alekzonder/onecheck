@@ -21,6 +21,10 @@ Rules for anyone (human or AI agent) changing this repository.
   outside `t.TempDir()`.
 - User-visible changes (config keys, operators, module fields, CLI flags,
   result/event JSON) must be reflected in `docs/`.
+- `docs/` is published as a site (Blume). Pages link to each other by site
+  route, `[Checks](/checks#anchor)`, never by `.md` path; `make docs-build`
+  must pass when `docs/` changes. See "Documentation site" in
+  `docs/development.md`.
 
 ## Repository map
 
@@ -38,7 +42,8 @@ Rules for anyone (human or AI agent) changing this repository.
 | `internal/github`, `internal/install` | module install/update, self-update |
 | `internal/cli` | cobra commands |
 | `install.sh` | installer script (POSIX sh); tested by `internal/installsh` |
-| `docs/` | user documentation (Markdown) |
+| `docs/` | user documentation (Markdown), the Blume site published to https://alekzonder.github.io/onecheck |
+| `scripts/` | documentation link check and publishing |
 
 ## Design rules that must hold
 

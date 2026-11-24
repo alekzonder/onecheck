@@ -8,7 +8,7 @@ GOLANGCI := $(CURDIR)/bin/golangci-lint
 
 export CGO_ENABLED ?= 0
 
-.PHONY: help build test fmt fmt-check vet lint check release-assets clean
+.PHONY: help build test fmt fmt-check vet lint check release-assets docs-build docs clean
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -51,6 +51,15 @@ release-assets: ## Cross-build release assets and checksums into dist/release/
 		done; \
 	done
 	@cd dist/release && sha256sum onecheck* > checksums.txt
+
+docs-build: ## Check links and build the documentation site into docs/dist/
+	scripts/docs-check-links-test.sh
+	scripts/docs-check-links.sh
+	@if [ ! -d docs/node_modules ]; then cd docs && npm ci; fi
+	cd docs && npm run doctor && npm run build
+
+docs: ## Build the documentation site and publish it to branch docs
+	scripts/publish-docs.sh
 
 clean: ## Remove build output
 	rm -rf dist
