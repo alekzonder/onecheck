@@ -79,12 +79,13 @@ Each element of `containers` has all of these keys:
 | `restart_count` | number | restarts done by the restart policy (`restart: always`, ...) |
 | `exit_code` | number | exit code of the last run; 0 while it runs |
 | `oom_killed` | bool | the last run was killed for running out of memory |
-| `uptime_seconds` | number | seconds since the container started, while it is `running` or `restarting`; otherwise 0 |
+| `uptime_seconds` | **duration** | seconds since the container started, while it is `running` or `restarting`; otherwise 0 |
 | `labels` | object | container labels |
 
 Element keys are checked with paths (`containers.0.state`) or with
-[`every` / `some` and `path`](/checks#every-some). Unit literals do not
-work inside elements: write `uptime_seconds: { gt: 3600 }`, not `1h`.
+[`every` / `some` and `path`](/checks#every-some). `uptime_seconds` is a
+**duration**: `{ path: uptime_seconds, gt: 1h }` works, as does a plain
+number of seconds.
 
 A rule that only checks `count` makes one request to Docker. A rule that
 checks `containers` asks Docker about each matching container too.

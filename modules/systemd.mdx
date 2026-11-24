@@ -4,10 +4,12 @@ sidebar:
   label: systemd
 ---
 
-Reports the state of one systemd unit, so you know that services which must
+Reports the state of one systemd unit, or lists the units in a state such
+as `failed`, so you know that services which must
 serve are running and start on boot, that units which must stay off are
 stopped and will not come back after a reboot, and that scheduled jobs
-(timers) really run and succeed.
+(timers) really run and succeed, and that nothing on the host is failed
+without anybody having listed it.
 
 Works with any unit type: `service`, `timer`, `socket`, `mount`, `path`,
 `target`, ... It calls `systemctl show`, so it needs systemd; on other
@@ -17,9 +19,11 @@ systems (macOS, Linux without systemd) every check is an `error`.
 
 | Key | Required | Description |
 |---|---|---|
-| `unit` | yes | unit name, e.g. `nginx.service`, `backup.timer`, `docker.socket` |
-| `user` | no | `true` checks a unit of the user's own service manager (`systemctl --user`); default `false` |
-| `properties` | no | list of extra `systemctl show` property names, returned in the `properties` field |
+| `unit` | one of `unit`, `state` | unit name, e.g. `nginx.service`, `backup.timer`, `docker.socket` |
+| `state` | one of `unit`, `state` | instead of a unit: list the units in this state, e.g. `failed`; see [Units in a state](#units-in-a-state) |
+| `exclude` | no | with `state`: list of shell patterns of unit names to leave out |
+| `user` | no | `true` checks the user's own service manager (`systemctl --user`); default `false` |
+| `properties` | no | with `unit`: list of extra `systemctl show` property names, returned in the `properties` field |
 
 A name without a suffix (`nginx`) is understood by systemd as a service.
 Name exactly one unit: patterns (`*`, `?`, `[`) are rejected, because
@@ -32,7 +36,8 @@ lingering (`loginctl enable-linger <user>`). If `XDG_RUNTIME_DIR` is not set,
 the module uses `/run/user/<uid>`. Checking another user's units from root is
 not supported.
 
-One rule checks one unit; write one rule per unit.
+A rule with `unit` checks one unit; write one rule per unit that must run
+or must stay off. A rule with `state` looks at the whole host.
 
 ## Fields
 
@@ -119,6 +124,68 @@ Which fields are present:
 
 A rule without `check` passes whenever the state could be read, as with any
 module, so always say what you expect.
+
+## Units in a state
+
+With `state` instead of `unit` the module returns the units systemd reports
+in that state (`systemctl list-units --all --state=<state>`), and nothing
+else:
+
+| Field | Type | Description |
+|---|---|---|
+| `units` | array | the units in that state, sorted by name |
+| `names` | array | their names, as strings |
+| `count` | number | how many there are |
+
+Each element of `units` has `name`, `load_state`, `active_state`,
+`sub_state` and `description`.
+
+The check it is made for is "nothing is failed":
+
+```yaml
+- name: no-failed-units
+  module: systemd
+  params: { state: failed }
+  check:
+    names: []
+```
+
+`names: []` passes while the list is empty and otherwise names the units:
+
+```
+FAIL   no-failed-units   (systemd, 14ms)
+       names: expected equals [], got ["backup@daily.service","nginx.service"]
+```
+
+`count: 0` means the same but its message only says how many.
+
+`exclude` leaves units out by name, with the
+[`glob` syntax](/checks#glob-not_glob): `*`, `?`, `[abc]`, `[!abc]`.
+
+```yaml
+- name: no-failed-units
+  module: systemd
+  params:
+    state: failed
+    exclude: ["user@*.service", "motd-news.service"]
+  check:
+    names: []
+```
+
+- Nothing in the state gives `names: []`, `units: []`, `count: 0`, not an
+  error.
+- `state` is a load or active state of systemd: `failed`, `active`,
+  `inactive`, `activating`, `deactivating`, `reloading`, `maintenance`,
+  `refreshing`, `loaded`, `not-found`, `bad-setting`, `error`, `masked`.
+  Any other name is an error of the rule: systemd itself answers a state it
+  does not know with an empty list, and a misspelt `faild` would pass
+  forever.
+- `user: true` lists the units of the user's service manager.
+- The fields of a single unit (`active_state`, `restarts`, ...) are missing
+  in this mode, and `units`, `names`, `count` are missing with `unit`.
+  `properties` works only with `unit`, `exclude` only with `state`.
+- For details of a unit in the list (restarts, timer runs), write a rule
+  with `unit`.
 
 ## Examples
 

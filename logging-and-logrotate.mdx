@@ -23,8 +23,8 @@ log:
 | Level | What is logged |
 |---|---|
 | `error` | a run that could not complete |
-| `warn` | recoverable problems, e.g. an unreadable state file |
-| `info` | one line per rule with its outcome, state changes, a summary per run |
+| `warn` | recoverable problems, e.g. an unreadable state file, a `remind_every` shorter than the time between runs |
+| `info` | one line per rule with its outcome, state changes and reminders (`reminder written`), a summary per run |
 | `debug` | additionally, per rule: the params and fields requested from the module, the values it returned (long strings cut to 256 bytes), the state counters; the modules found; what modules printed on their stderr |
 
 The level is taken from `--log-level`, then `log.level`, then `info`:

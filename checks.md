@@ -183,6 +183,21 @@ tls_expires_in: { gt: 14d }
 Unit literals work for `equals`, `not_equals`, `in`, `not_in` too, and only
 directly on such a field (not on values inside JSON).
 
+A module that returns a list can mark keys of its elements as **bytes** or
+**duration** as well. A literal then works wherever a condition addresses
+that key of one element:
+
+```yaml
+filesystems: { every: { path: free, gt: 5GB } }       # under every / some
+filesystems.0.free: { gt: 5GB }                        # by index
+filesystems.#(mountpoint=="/").free: { gt: 5GB }       # first match of a query
+filesystems.#(fstype=="ext4")#:                        # a filtered list
+  every: { path: free, gt: 5GB }
+```
+
+It does not work on a list of values (`filesystems.#.free`) or on a key the
+module's page does not mark.
+
 ### `in`, `not_in`
 
 ```yaml
@@ -292,8 +307,10 @@ containers.0: { path: state, equals: running }   # same as containers.0.state: r
 
 `path` uses the same [GJSON syntax](#paths) as check keys and needs at least
 one operator next to it. A missing sub-path is handled like any
-[missing value](#missing-values). Unit literals (`10MB`, `1h`) do not apply
-under `path`: compare with plain numbers.
+[missing value](#missing-values). Unit literals (`10MB`, `1h`) apply under
+`path` only when it names a key of an element that the module marks as
+**bytes** or **duration**, see [above](#gt-gte-lt-lte); otherwise compare
+with plain numbers.
 
 ### `json`
 
