@@ -14,7 +14,7 @@ const paramsSchema = `{
   "additionalProperties": false,
   "required": ["unit"],
   "properties": {
-    "unit": {"type": "string", "minLength": 1, "description": "unit name, e.g. nginx.service or backup.timer"},
+    "unit": {"type": "string", "minLength": 1, "description": "unit name, e.g. nginx.service or backup.timer; no patterns"},
     "user": {"type": "boolean", "description": "check a unit of the user's service manager (systemctl --user)"},
     "properties": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "extra systemctl show properties returned in the properties field"}
   }
@@ -39,8 +39,8 @@ var mod = module.Module{
 			"exit_status":          {Type: module.TypeNumber, Description: "service: exit status of the last main process"},
 			"service":              {Type: module.TypeString, Description: "timer: the unit it activates"},
 			"last_trigger_age":     {Type: module.TypeDuration, Description: "timer: seconds since it last fired; absent if it has not fired"},
-			"idle_age":             {Type: module.TypeDuration, Description: "timer: seconds since it last fired or, if it has not fired since, since it was activated"},
-			"next_trigger_in":      {Type: module.TypeDuration, Description: "timer: seconds until it fires next; absent if nothing is scheduled"},
+			"idle_age":             {Type: module.TypeDuration, Description: "timer: seconds since it last fired or, if systemd has no last trigger (e.g. after a reboot without Persistent=true), since it was activated"},
+			"next_trigger_in":      {Type: module.TypeDuration, Description: "timer: seconds until the next calendar (OnCalendar) run; absent if none is scheduled"},
 			"service_result":       {Type: module.TypeString, Description: "timer: result of the last run of the activated unit"},
 			"service_exit_status":  {Type: module.TypeNumber, Description: "timer: exit status of the activated service's last main process"},
 			"service_active_state": {Type: module.TypeString, Description: "timer: active state of the activated unit"},

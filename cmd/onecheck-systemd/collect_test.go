@@ -67,7 +67,7 @@ func TestCollectServiceArgs(t *testing.T) {
 	wantFields(t, f, map[string]any{"active_state": "active", "restarts": int64(0), "main_pid": int64(42)})
 	wantAbsent(t, f, "properties")
 	c := calls(t, log)
-	if len(c) != 1 || !strings.HasPrefix(c[0], "show nginx -p ") || strings.Contains(c[0], "--user") {
+	if len(c) != 1 || !strings.HasPrefix(c[0], "show -p ") || !strings.Contains(c[0], " -- nginx ") || strings.Contains(c[0], "--user") {
 		t.Fatalf("calls = %q", c)
 	}
 	for _, p := range []string{"ActiveState", "LastTriggerUSec", "NRestarts"} {
@@ -85,7 +85,7 @@ func TestCollectUserFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := calls(t, log)
-	if !strings.HasPrefix(c[0], "--user show app.service") {
+	if !strings.HasPrefix(c[0], "--user show -p ") || !strings.Contains(c[0], " -- app.service ") {
 		t.Errorf("call = %q", c[0])
 	}
 	if want := "XDG=/run/user/" + strconv.Itoa(os.Getuid()); !strings.HasSuffix(c[0], want) {
@@ -117,7 +117,7 @@ func TestCollectTimerReadsActivatedUnit(t *testing.T) {
 	}
 	wantFields(t, f, map[string]any{"service": "backup.service", "service_result": "exit-code", "service_exit_status": int64(2)})
 	c := calls(t, log)
-	if len(c) != 2 || !strings.HasPrefix(c[1], "show backup.service -p ") {
+	if len(c) != 2 || !strings.Contains(c[1], " -- backup.service ") {
 		t.Errorf("calls = %q", c)
 	}
 }
@@ -194,5 +194,51 @@ func TestDescribeListsFields(t *testing.T) {
 		if d.Fields[k].Type != typ {
 			t.Errorf("%s type = %q, want %q", k, d.Fields[k].Type, typ)
 		}
+	}
+}
+
+func TestCollectOptionLikeUnitIsNotAnOption(t *testing.T) {
+	log := fakeSystemctl(t, map[string]string{"-foo.service": "Id=-foo.service\nLoadState=not-found\n"})
+	f, err := run(t, map[string]any{"unit": "-foo.service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFields(t, f, map[string]any{"load_state": "not-found"})
+	if c := calls(t, log); !strings.Contains(c[0], " -- -foo.service ") {
+		t.Errorf("call = %q, want the unit after --", c[0])
+	}
+}
+
+func TestCollectGlobIsError(t *testing.T) {
+	log := fakeSystemctl(t, nil)
+	for _, u := range []string{"*.service", "nginx?", "app[12].service"} {
+		_, err := run(t, map[string]any{"unit": u})
+		if err == nil || !strings.Contains(err.Error(), "pattern") {
+			t.Errorf("unit %q: err = %v", u, err)
+		}
+	}
+	if _, err := os.Stat(log); err == nil {
+		t.Error("systemctl must not be called for a pattern")
+	}
+}
+
+func TestCollectNoIdIsError(t *testing.T) {
+	fakeSystemctl(t, map[string]string{"--all": ""})
+	if _, err := run(t, map[string]any{"unit": "--all"}); err == nil {
+		t.Error("output without Id must be an error")
+	}
+}
+
+func TestCollectSeveralUnitsIsError(t *testing.T) {
+	fakeSystemctl(t, map[string]string{"a.service": "Id=a.service\n\nId=b.service\n"})
+	if _, err := run(t, map[string]any{"unit": "a.service"}); err == nil {
+		t.Error("output of several units must be an error")
+	}
+}
+
+func TestCollectPropertyNameWithCommaIsError(t *testing.T) {
+	fakeSystemctl(t, map[string]string{"a.service": "Id=a.service\n"})
+	if _, err := run(t, map[string]any{"unit": "a.service", "properties": []string{"A,B"}}); err == nil {
+		t.Error("a property name with a comma must be an error")
 	}
 }

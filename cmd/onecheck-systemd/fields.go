@@ -49,12 +49,12 @@ func timerFields(out map[string]any, p map[string]string, now time.Time) {
 	if fired {
 		out["last_trigger_age"] = now.Sub(last).Seconds()
 	}
-	// idle_age counts from the activation when the timer has not fired
-	// since then: a timer without Persistent=true forgets its last trigger
-	// on reboot.
-	since, ok := parseTime(p["ActiveEnterTimestamp"])
-	if fired && (!ok || last.After(since)) {
-		since, ok = last, true
+	// idle_age counts from the activation only when the timer has no last
+	// trigger: one without Persistent=true forgets it on reboot. A known last
+	// trigger always wins, so restarting a stale timer does not hide it.
+	since, ok := last, fired
+	if !fired {
+		since, ok = parseTime(p["ActiveEnterTimestamp"])
 	}
 	if ok {
 		out["idle_age"] = now.Sub(since).Seconds()

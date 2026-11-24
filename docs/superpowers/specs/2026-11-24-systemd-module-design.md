@@ -82,7 +82,7 @@ Timers only (`*.timer`):
 |---|---|---|
 | `service` | string | `Unit`: the unit the timer activates |
 | `last_trigger_age` | duration | now − `LastTriggerUSec`; omitted if the timer never fired (so `lt: 25h` fails with "field is missing") |
-| `idle_age` | duration | now − the later of `LastTriggerUSec` and the timer's `ActiveEnterTimestamp`: how long the timer has been watching without firing; omitted if neither is known |
+| `idle_age` | duration | now − `LastTriggerUSec`, or now − the timer's `ActiveEnterTimestamp` when systemd has no last trigger (changed after the final review: "later of the two" let a timer restart hide a stale timer); omitted if neither is known |
 | `next_trigger_in` | duration | `NextElapseUSecRealtime` − now; omitted if no next elapse is scheduled; negative values clamped to 0 |
 | `service_result` | string | `Result` of the activated unit (last run of the job) |
 | `service_exit_status` | number | `ExecMainStatus` of the activated unit (if it is a service) |
@@ -107,6 +107,11 @@ Durations are seconds (float), like the `file` module's `age`.
   `ActiveState=inactive`; the module returns that. "Must run" then fails with
   a clear message and "must be stopped" passes: a removed unit does not run.
   Our call.
+- **Unit name (after the final review):** passed after `--` so a name
+  starting with `-` is not an option; patterns (`*?[`) are rejected because
+  systemctl would print several units; output with no `Id` or with several
+  blank-line-separated blocks is an error. Property names must be
+  alphanumeric (a comma would split the `-p` list).
 - **Errors (status `error`):** `systemctl` not in `PATH`, which covers macOS
   ("systemd is not available"), `systemctl` exits non-zero (its stderr in the
   message, e.g. no user bus for `user: true`), output that cannot be parsed,

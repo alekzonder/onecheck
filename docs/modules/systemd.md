@@ -18,6 +18,9 @@ systems (macOS, Linux without systemd) every check is an `error`.
 | `properties` | no | list of extra `systemctl show` property names, returned in the `properties` field |
 
 A name without a suffix (`nginx`) is understood by systemd as a service.
+Name exactly one unit: patterns (`*`, `?`, `[`) are rejected, because
+systemd would report several units at once. Escaped names such as
+`dev-disk-by\x2dlabel-root.device` work as `systemctl` shows them.
 
 `user: true` is for onecheck running as an ordinary user. The user's service
 manager must be running: for cron or a timer outside a login session enable
@@ -55,8 +58,8 @@ Timers:
 |---|---|---|
 | `service` | string | the unit the timer starts |
 | `last_trigger_age` | **duration** | time since the timer last fired; missing if it has not fired |
-| `idle_age` | **duration** | time since the timer last fired or, if it has not fired since it was activated (e.g. after a reboot), since its activation |
-| `next_trigger_in` | **duration** | time until the timer fires next; missing if nothing is scheduled |
+| `idle_age` | **duration** | time since the timer last fired or, if systemd does not know when it last fired (e.g. after a reboot without `Persistent=true`), since the timer was activated |
+| `next_trigger_in` | **duration** | time until the next calendar (`OnCalendar=`) run; missing if none is scheduled, so always missing for timers with only `OnBootSec=`/`OnActiveSec=`/`OnUnitActiveSec=` |
 | `service_result` | string | result of the last run of the started unit: `success`, `exit-code`, ... |
 | `service_exit_status` | number | exit status of the started service's last main process |
 | `service_active_state` | string | active state of the started unit |
@@ -74,7 +77,9 @@ Raw:
 
 - **Must run:** `active_state: active`. **Must be stopped:**
   `active_state: { not_equals: active }` (a `failed` unit is not running
-  either).
+  either). A typo in the unit name makes "must be stopped" pass, because a
+  unit that does not exist is not running: add `load_state: loaded` to
+  rules for units that must be installed.
 - **Starts on boot / must not:** `unit_file_state`. `enabled` starts on boot;
   `disabled` and `masked` do not (`masked` cannot even be started by hand).
   `static` units have no `[Install]` section and are started by something
@@ -84,7 +89,9 @@ Raw:
   `last_trigger_age` is then missing and a condition on it fails until the
   timer fires again, up to a whole period after each boot. `idle_age` counts
   from the timer's activation in that case, and still fails when an active
-  timer has not fired for longer than the threshold.
+  timer has not fired for longer than the threshold. When systemd knows the
+  last run, `idle_age` equals `last_trigger_age`, so restarting a timer that
+  stopped firing does not hide it.
 - **The job succeeds:** `service_result: success`. Prefer it to
   `service_exit_status`: a unit may declare other exit codes successful
   (`SuccessExitStatus=`), and `service_result` already accounts for that.
@@ -96,7 +103,8 @@ Which fields are present:
 
 - Service fields only for services, timer fields only for timers.
 - A unit that does not exist is not an error: systemd reports it with
-  `load_state: not-found` and `active_state: inactive`. "Must run" then fails
+  `load_state: not-found` and `active_state: inactive` (and default values
+  such as `result: success`, `restarts: 0` for services). "Must run" then fails
   with a clear message, "must be stopped" passes.
 - Older systemd versions do not have some properties (`NRestarts` appeared in
   systemd 235); their fields are then missing and conditions on them fail

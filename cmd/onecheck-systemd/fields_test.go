@@ -102,3 +102,12 @@ func TestPropertyValue(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitFieldsTimerRestartedKeepsLastTrigger(t *testing.T) {
+	f := unitFields(map[string]string{
+		"Id":                   "backup.timer",
+		"LastTriggerUSec":      "Sat 2026-11-14 12:00:00 UTC",
+		"ActiveEnterTimestamp": "Tue 2026-11-24 11:00:00 UTC",
+	}, testNow)
+	wantFields(t, f, map[string]any{"idle_age": 864000.0, "last_trigger_age": 864000.0})
+}

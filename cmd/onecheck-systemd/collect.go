@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
+	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alekzonder/onecheck/pkg/module"
@@ -24,14 +27,17 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	if err := module.DecodeParams(req.Params, &p); err != nil {
 		return nil, err
 	}
-	if p.Unit == "" {
-		return nil, errors.New("invalid params: unit is required")
+	if err := p.validate(); err != nil {
+		return nil, err
 	}
 	want := slices.Concat(commonProps, serviceProps, timerProps, p.Properties)
 	slices.Sort(want)
 	props, err := show(ctx, p.User, p.Unit, slices.Compact(want))
 	if err != nil {
 		return nil, err
+	}
+	if props["Id"] == "" {
+		return nil, fmt.Errorf("systemctl show %s printed no unit", p.Unit)
 	}
 	out := unitFields(props, now())
 	if len(p.Properties) > 0 {
@@ -52,6 +58,24 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 	}
 	return out, nil
 }
+
+func (p params) validate() error {
+	if p.Unit == "" {
+		return errors.New("invalid params: unit is required")
+	}
+	// systemctl show expands patterns and prints every matching unit.
+	if strings.ContainsAny(p.Unit, "*?[") {
+		return fmt.Errorf("invalid params: unit %q is a pattern; name one unit", p.Unit)
+	}
+	for _, name := range p.Properties {
+		if !propertyName.MatchString(name) {
+			return fmt.Errorf("invalid params: property %q is not a systemd property name", name)
+		}
+	}
+	return nil
+}
+
+var propertyName = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 func wantsActivated(req module.Request) bool {
 	for _, f := range []string{"service_result", "service_exit_status", "service_active_state"} {

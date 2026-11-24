@@ -22,7 +22,8 @@ func show(ctx context.Context, user bool, unit string, props []string) (map[stri
 	if user {
 		args = append(args, "--user")
 	}
-	args = append(args, "show", unit, "-p", strings.Join(props, ","))
+	// "--" keeps a unit name that starts with "-" from being read as an option.
+	args = append(args, "show", "-p", strings.Join(props, ","), "--", unit)
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // fixed program, unit passed as one argument
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
 	if user && os.Getenv("XDG_RUNTIME_DIR") == "" {
@@ -36,5 +37,9 @@ func show(ctx context.Context, user bool, unit string, props []string) (map[stri
 		}
 		return nil, fmt.Errorf("systemctl show %s: %w", unit, err)
 	}
-	return parseShow(stdout.String()), nil
+	out := strings.TrimSpace(stdout.String())
+	if strings.Contains(out, "\n\n") {
+		return nil, fmt.Errorf("systemctl show %s printed several units", unit)
+	}
+	return parseShow(out), nil
 }
