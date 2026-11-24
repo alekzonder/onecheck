@@ -145,7 +145,7 @@ func compileAsserts(v any) ([]jsonAssert, error) {
 				ops[k] = val
 			}
 		}
-		n, err := compileCond(ops, "")
+		n, err := compileCond(ops, typing{})
 		if err != nil {
 			return nil, fmt.Errorf("json.assert[%d] (%s): %w", i, path, err)
 		}

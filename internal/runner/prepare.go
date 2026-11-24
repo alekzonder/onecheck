@@ -26,7 +26,9 @@ type loadedModule struct {
 	outputs []string
 	schema  *jsonschema.Schema
 	types   match.FieldTypes
-	err     error
+	// elements are the key types of the elements of array fields.
+	elements match.ElementTypes
+	err      error
 }
 
 // moduleSet describes each module at most once per run.
@@ -60,9 +62,12 @@ func (s *moduleSet) load(ctx context.Context, name string) *loadedModule {
 	if err := info.CompatError(); err != nil {
 		return &loadedModule{err: err}
 	}
-	m := &loadedModule{info: info, types: match.FieldTypes{}}
+	m := &loadedModule{info: info, types: match.FieldTypes{}, elements: match.ElementTypes{}}
 	for field, fi := range info.Fields {
 		m.types[field] = fi.Type
+		if len(fi.Elements) > 0 {
+			m.elements[field] = fi.Elements
+		}
 		if fi.Output {
 			m.outputs = append(m.outputs, field)
 		}
@@ -126,7 +131,7 @@ func prepare(ctx context.Context, rule config.Rule, mods *moduleSet) prepared {
 	if p.err = validateEventOutput(rule, p.mod); p.err != nil {
 		return p
 	}
-	p.check, p.err = match.Compile(rule.Check, p.mod.types)
+	p.check, p.err = match.Compile(rule.Check, p.mod.types, p.mod.elements)
 	return p
 }
 

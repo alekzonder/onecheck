@@ -26,7 +26,7 @@ import (
 var modDir string
 
 func TestMain(m *testing.M) {
-	dir, err := testmods.Build("file", "command", "http")
+	dir, err := testmods.Build("file", "command", "http", "docker")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -794,5 +794,24 @@ func TestEventOfAnInvalidRuleHasNoExpandedParams(t *testing.T) {
 	ev := e.eventJSON()
 	if !strings.Contains(string(ev["params"]), "${ONECHECK_TEST_UNSET_VAR}") {
 		t.Errorf("params = %s", ev["params"])
+	}
+}
+
+func TestUnitLiteralsInElementsOfAModuleThatTypesThem(t *testing.T) {
+	e := newEnv(t)
+	cfg := e.load(`
+  - name: typed
+    module: docker
+    check: {containers: {every: {path: uptime_seconds, gt: 1h}}}
+  - name: typed-index
+    module: docker
+    check: {containers.0.uptime_seconds: {gt: 90m}}
+  - name: untyped
+    module: docker
+    check: {containers: {every: {path: restart_count, gt: 1h}}}
+`)
+	errs := Validate(context.Background(), cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "rule untyped") {
+		t.Errorf("only the literal on an untyped key is an error, got %v", errs)
 	}
 }

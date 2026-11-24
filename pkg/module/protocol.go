@@ -33,6 +33,10 @@ type FieldInfo struct {
 	// response body): onecheck asks for it on every check and keeps its
 	// tail in the result, whether or not a condition uses it.
 	Output bool `json:"output,omitempty"`
+	// Elements gives, for an array field whose elements are objects, the
+	// types of the keys of an element. Keys typed bytes or duration accept
+	// unit literals in conditions, like fields of those types.
+	Elements map[string]FieldType `json:"elements,omitempty"`
 }
 
 // Description is the answer to "onecheck-<name> describe".

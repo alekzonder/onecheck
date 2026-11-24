@@ -37,7 +37,7 @@ func compile(t *testing.T, checkYAML string) (*Check, error) {
 	if err := yaml.Unmarshal([]byte(checkYAML), &raw); err != nil {
 		t.Fatalf("bad test yaml: %v", err)
 	}
-	return Compile(raw, testTypes)
+	return Compile(raw, testTypes, nil)
 }
 
 func eval(t *testing.T, checkYAML string) []Failure {
@@ -385,7 +385,7 @@ func TestActualIsCut(t *testing.T) {
 }
 
 func TestEmptyCheck(t *testing.T) {
-	c, err := Compile(nil, testTypes)
+	c, err := Compile(nil, testTypes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func evalOn(t *testing.T, fieldsJSON, checkYAML string) []Failure {
 	if err := yaml.Unmarshal([]byte(checkYAML), &raw); err != nil {
 		t.Fatalf("bad test yaml: %v", err)
 	}
-	c, err := Compile(raw, nil)
+	c, err := Compile(raw, nil, nil)
 	if err != nil {
 		t.Fatalf("compile %q: %v", checkYAML, err)
 	}
@@ -536,5 +536,97 @@ func TestFocusFallsBackToWholeElement(t *testing.T) {
 	got := evalOn(t, fields, `c: {every: {any: [{path: "@this", equals: 1}]}}`)
 	if len(got) != 1 || !strings.Contains(got[0].Message, `"labels"`) {
 		t.Errorf("failures = %+v", got)
+	}
+}
+
+const diskFields = `{"disks":[
+  {"name":"a","free":10737418240,"age":30},
+  {"name":"b","free":1073741824,"age":7200}
+]}`
+
+var (
+	diskTypes    = FieldTypes{"disks": module.TypeArray}
+	diskElements = ElementTypes{"disks": {"free": module.TypeBytes, "age": module.TypeDuration, "name": module.TypeString}}
+)
+
+func compileDisks(t *testing.T, checkYAML string, elements ElementTypes) (*Check, error) {
+	t.Helper()
+	var raw map[string]any
+	if err := yaml.Unmarshal([]byte(checkYAML), &raw); err != nil {
+		t.Fatalf("bad test yaml: %v", err)
+	}
+	return Compile(raw, diskTypes, elements)
+}
+
+func TestElementUnits(t *testing.T) {
+	cases := []struct {
+		check    string
+		failures int
+	}{
+		{`disks: {every: {path: free, gt: 500MB}}`, 0},
+		{`disks: {every: {path: free, gt: 5GB}}`, 1},
+		{`disks: {every: [{path: free, gt: 5GB}, {path: age, lt: 1h}]}`, 2},
+		{`disks: {some: {path: age, gt: 1h}}`, 0},
+		{`disks: {some: {path: age, gt: 1d}}`, 1},
+		{`disks: {every: {any: [{path: free, gt: 5GB}, {path: age, gt: 1h}]}}`, 0},
+		{`disks: {every: {not: {path: free, lt: 500MB}}}`, 0},
+		{`disks: {every: {all: [{path: free, gt: 500MB}, {path: name, in: [a, b]}]}}`, 0},
+		{`disks.0.free: {gt: 5GB}`, 0},
+		{`disks.1.free: {gt: 5GB}`, 1},
+		{`disks.1.age: 2h`, 0},
+		{`disks.0: {path: free, gt: 5GB}`, 0},
+		{`'disks.#(name=="b").free': {lt: 2GB}`, 0},
+		{`'disks.#(name=="b").free': {gt: 2GB}`, 1},
+		{`'disks.#(free>2000000000)#': {every: {path: free, gt: 5GB}}`, 0},
+		{`'disks.#(free>0)#': {every: {path: free, gt: 5GB}}`, 1},
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(diskFields), &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		check, err := compileDisks(t, c.check, diskElements)
+		if err != nil {
+			t.Errorf("%s: %v", c.check, err)
+			continue
+		}
+		failures, err := check.Eval(fields, nil)
+		if err != nil || len(failures) != c.failures {
+			t.Errorf("%s: %d failures, want %d: %+v (err %v)", c.check, len(failures), c.failures, failures, err)
+		}
+	}
+}
+
+func TestElementUnitFailureNamesElement(t *testing.T) {
+	check, err := compileDisks(t, `disks: {every: {path: free, gt: 5GB}}`, diskElements)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(diskFields), &fields); err != nil {
+		t.Fatal(err)
+	}
+	failures, _ := check.Eval(fields, nil)
+	if len(failures) != 1 || failures[0].Path != "disks.1.free" || !strings.Contains(failures[0].Message, `"name":"b"`) ||
+		!strings.Contains(failures[0].Message, "5GB") {
+		t.Errorf("failures = %+v", failures)
+	}
+}
+
+func TestElementUnitsNeedADeclaredType(t *testing.T) {
+	for _, check := range []string{
+		`disks: {every: {path: name, gt: 5GB}}`,  // a string key
+		`disks: {every: {path: other, gt: 5GB}}`, // a key the module did not type
+		`'disks.#.free': {gt: 5GB}`,              // a list of numbers, not one value
+		`disks: {gt: 5GB}`,                       // the array itself
+		`disks: {length: {gt: 5GB}}`,
+		`disks: {every: {path: free.x, gt: 5GB}}`,
+	} {
+		if _, err := compileDisks(t, check, diskElements); err == nil {
+			t.Errorf("%s: must not compile", check)
+		}
+	}
+	if _, err := compileDisks(t, `disks: {every: {path: free, gt: 5GB}}`, nil); err == nil {
+		t.Error("a module that declares no element types gets no literals in elements")
 	}
 }

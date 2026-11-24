@@ -123,3 +123,22 @@ func TestRunCollectErrorKeepsPartialFields(t *testing.T) {
 		t.Errorf("partial fields were dropped: %v", resp.Fields)
 	}
 }
+
+func TestDescribeCarriesElementTypes(t *testing.T) {
+	m := testModule(nil)
+	m.Description.Fields["disks"] = FieldInfo{Type: TypeArray, Description: "disks", Elements: map[string]FieldType{"free": TypeBytes}}
+	var out bytes.Buffer
+	if code := Run(m, []string{"describe"}, strings.NewReader(""), &out, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	if !strings.Contains(out.String(), `"elements":{"free":"bytes"}`) {
+		t.Errorf("describe = %s", out.String())
+	}
+	if strings.Count(out.String(), `"elements"`) != 1 {
+		t.Errorf("a field without element types must not print the key: %s", out.String())
+	}
+	var back Description
+	if err := json.Unmarshal(out.Bytes(), &back); err != nil || back.Fields["disks"].Elements["free"] != TypeBytes {
+		t.Errorf("round trip: %+v, %v", back.Fields["disks"], err)
+	}
+}
