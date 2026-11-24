@@ -44,7 +44,7 @@ var mod = module.Module{
 			"service_result":       {Type: module.TypeString, Description: "timer: result of the last run of the activated unit"},
 			"service_exit_status":  {Type: module.TypeNumber, Description: "timer: exit status of the activated service's last main process"},
 			"service_active_state": {Type: module.TypeString, Description: "timer: active state of the activated unit"},
-			"properties":           {Type: module.TypeObject, Description: "values of params.properties as printed by systemctl show"},
+			"properties":           {Type: module.TypeObject, Description: "values of params.properties: integers as numbers, everything else as printed by systemctl show"},
 		},
 	},
 	Collect: collect,

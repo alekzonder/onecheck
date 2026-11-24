@@ -139,7 +139,7 @@ func TestCollectProperties(t *testing.T) {
 		t.Fatal(err)
 	}
 	props, _ := f["properties"].(map[string]any)
-	if len(props) != 1 || props["MemoryCurrent"] != "1073152" {
+	if len(props) != 1 || props["MemoryCurrent"] != int64(1073152) {
 		t.Errorf("properties = %#v", f["properties"])
 	}
 	if c := calls(t, log); !strings.Contains(c[0], "MemoryCurrent") || !strings.Contains(c[0], "Nope") {

@@ -87,3 +87,13 @@ func copyInt(out map[string]any, p map[string]string, names map[string]string) {
 		}
 	}
 }
+
+// propertyValue returns a raw property as a number when systemd printed an
+// integer (sizes, counts, ids), so conditions such as lt work on it, and as
+// text otherwise ("infinity", "yes", "[not set]").
+func propertyValue(v string) any {
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return n
+	}
+	return v
+}

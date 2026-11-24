@@ -38,7 +38,7 @@ func collect(ctx context.Context, req module.Request) (map[string]any, error) {
 		raw := map[string]any{}
 		for _, name := range p.Properties {
 			if v, ok := props[name]; ok {
-				raw[name] = v
+				raw[name] = propertyValue(v)
 			}
 		}
 		out["properties"] = raw

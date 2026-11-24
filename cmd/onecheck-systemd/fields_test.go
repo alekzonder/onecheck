@@ -93,3 +93,12 @@ func TestActivatedFields(t *testing.T) {
 		"service_result": "exit-code", "service_exit_status": int64(2), "service_active_state": "inactive",
 	})
 }
+
+func TestPropertyValue(t *testing.T) {
+	cases := map[string]any{"1073152": int64(1073152), "-1": int64(-1), "infinity": "infinity", "yes": "yes", "": "", "1.5": "1.5", "[not set]": "[not set]"}
+	for in, want := range cases {
+		if got := propertyValue(in); got != want {
+			t.Errorf("propertyValue(%q) = %v (%T), want %v (%T)", in, got, got, want, want)
+		}
+	}
+}
