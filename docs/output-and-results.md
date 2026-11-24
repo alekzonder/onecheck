@@ -73,6 +73,7 @@ The note in brackets appears when the confirmed state needs explaining:
 |---|---|
 | `[transition: fail]` | this run changed the state to `fail`; an event was written |
 | `[transition: recovered]` | this run changed the state back to `pass`; an event was written |
+| `[transition: reminder]` | the state is still `fail` and `remind_every` has passed; a reminder event was written |
 | `[state: pass, 1/3]` | the run did not pass, but the state is still `pass`: 1 of `fail_after: 3` |
 | `[state: fail, 1/2]` | the run passed, but the state is still `fail`: 1 of `pass_after: 2` |
 
@@ -165,7 +166,7 @@ The same object is used in JSON output, in result files and inside events.
 | `tags` | array | the rule's tags, `[]` if none |
 | `status` | string | outcome of this run: `pass`, `fail`, `error` |
 | `state` | string | confirmed state after this run: `pass`, `fail` |
-| `transition` | string or null | `fail` or `recovered` if this run changed the state, else `null` |
+| `transition` | string or null | the event this run wrote: `fail` or `recovered` if it changed the state, `reminder` if the rule stays failed and a [reminder](/state-and-events#reminders) was due; else `null` |
 | `consecutive` | number | how many runs in a row ended like this one (passing, or not passing) |
 | `fail_after`, `pass_after` | number | the rule's thresholds |
 | `started_at` | string | start of the check, UTC, RFC 3339 |

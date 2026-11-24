@@ -3,8 +3,8 @@
 onecheck does not only tell whether a check passes right now. For every rule
 it keeps a **confirmed state** between runs and records each change of that
 state as an **event**. This is what a notification service builds on: it gets
-told when something broke and when it recovered, once per change, regardless
-of which module the rule uses.
+told when something broke and when it recovered, once per change, and is
+reminded while the problem stays, regardless of which module the rule uses.
 
 [onenotify](https://alekzonder.github.io/onenotify) is such a service: it
 takes the events described here and delivers them to Telegram, mail or ntfy.
@@ -79,10 +79,62 @@ rule that failed once with `fail_after: 3` already makes `onecheck` exit with
 A manual `onecheck run --rule <name>` updates the state and writes events
 exactly like a scheduled run.
 
+## Reminders
+
+A `fail` event is written once. If nobody fixed the problem, onecheck says so
+again: while a rule's state stays `fail`, it writes a `reminder` event every
+`remind_every`.
+
+```yaml
+defaults:
+  remind_every: 60m     # the built-in default
+
+rules:
+  - name: api-health
+    module: http
+    remind_every: 15m   # this one more often
+    params: { url: https://example.com/health }
+    check: { status: 200 }
+
+  - name: nightly-report
+    module: file
+    remind_every: 0     # one notification is enough: no reminders
+    params: { path: /var/reports/today.csv }
+    check: { exists: true }
+```
+
+- Reminders are on by default, every 60 minutes. `remind_every: 0` turns them
+  off, for one rule or in `defaults` for all.
+- Reminders are due at fixed times counted from the start of the problem:
+  after `remind_every`, after twice that, and so on. A reminder is written by
+  the first run after a due time, so a run that starts late does not shift
+  the following ones.
+- One run writes at most one reminder for a rule. After the host was down
+  for a day there is one reminder, not twenty-four.
+- A run that **passed** writes no reminder, even if the state is still `fail`
+  because `pass_after` has not been reached. If the next run fails again, the
+  reminder is written then.
+- A run that ended with `error` is reminded of like any failing run.
+- The reminder carries the result of the run that wrote it, so the
+  notification shows the problem as it is now, and `since`: when it began.
+
+onecheck has no scheduler, so a reminder cannot come more often than the
+config is run. A `remind_every` shorter than the time since the rule's
+previous run means "on every run"; onecheck then logs a warning:
+
+```
+level=WARN msg="remind_every is shorter than the time between runs, a reminder is written on every run" rule=api-health remind_every=1m0s since_last_run=5m0s
+```
+
+Raise `remind_every` or run the config more often. The warning is given only
+for a value set in the config, not for the built-in 60 minutes of a config
+that runs once a day. After the host was down, one such warning is expected.
+
 ## Events
 
-Every change of a rule's confirmed state writes one file into the event queue
-directory, `paths.events`:
+Every change of a rule's confirmed state, and every
+[reminder](#reminders), writes one file into the event queue directory,
+`paths.events`:
 
 ```
 /var/lib/onecheck/events/20261123T100200Z-main-api-health-fail.json
@@ -100,6 +152,7 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
   "to": "fail",
   "at": "2026-11-23T10:02:00Z",
   "expires_at": "2026-11-24T10:02:00Z",
+  "since": "2026-11-23T10:02:00Z",
   "params": {
     "url": "https://example.com/health",
     "headers": { "Authorization": "Bearer ${API_TOKEN}" }
@@ -142,17 +195,38 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
 | `id` | unique id, equal to the file name without `.json` |
 | `config` | `name` of the config the rule belongs to |
 | `rule` | rule name |
-| `transition` | `fail` (pass → fail) or `recovered` (fail → pass) |
-| `from`, `to` | confirmed state before and after |
-| `at` | when the change was recorded (UTC, RFC 3339) |
+| `transition` | `fail` (pass → fail), `recovered` (fail → pass) or `reminder` (still fail) |
+| `from`, `to` | confirmed state before and after; both `fail` for a reminder |
+| `at` | when the event was recorded (UTC, RFC 3339) |
 | `expires_at` | `at` + `events.ttl`; after this the event may be deleted |
+| `since` | when the state in `to` began: equal to `at` for `fail` and `recovered`, the time of the `fail` event for a reminder |
 | `params` | the rule's `params` exactly as written in the config, before `${VAR}` is replaced; `null` when the rule has none or has `event_params: false` |
 | `redacted` | `true` when the rule has `event_params: false`: a consumer must not show the details of this event (params, failures, error) to third parties |
-| `result` | the full result of the run that caused the change, see [Output and results](/output-and-results#result-format) |
+| `result` | the full result of the run that wrote the event, see [Output and results](/output-and-results#result-format) |
 
 For a `recovered` event, `result` is the passing run (`failures` is empty).
 For a `fail` event caused by a check that could not run, `result.status` is
 `error` and `result.error` holds the reason.
+
+A reminder is the same file with `reminder` in its name and `since` pointing
+back to the start of the problem (`result` is left out here):
+
+```json
+{
+  "id": "20261123T110215Z-main-api-health-reminder",
+  "config": "main",
+  "rule": "api-health",
+  "transition": "reminder",
+  "from": "fail",
+  "to": "fail",
+  "at": "2026-11-23T11:02:15Z",
+  "expires_at": "2026-11-24T11:02:15Z",
+  "since": "2026-11-23T10:02:00Z",
+  "params": { "url": "https://example.com/health" },
+  "redacted": false,
+  "result": { "status": "fail", "state": "fail", "transition": "reminder", "consecutive": 63 }
+}
+```
 
 ### What an event can reveal
 
@@ -223,11 +297,15 @@ unchanged and the run ends with exit code `2`; the next run detects the same
 change again and retries. A change of state is therefore either in the queue
 or reported as a failed run, never silently dropped.
 
+Reminders follow the same order. If the state cannot be saved after a
+reminder was written, the next run writes that reminder once more: a
+consumer may see a duplicate, never a gap.
+
 ## Files
 
 | Path | Content | Lifetime |
 |---|---|---|
-| `<paths.state>/<name>/<rule>.json` | confirmed state and consecutive counters | internal, do not edit |
+| `<paths.state>/<name>/<rule>.json` | confirmed state, consecutive counters, time of the last reminder and of the previous run | internal, do not edit |
 | `<paths.state>/<name>/.lock`, `.owner` | run lock; which config file owns the name | internal |
 | `<paths.results>/<name>/<rule>.json` | latest result of the rule | overwritten every run |
 | `<paths.events>/<id>.json` | one state change | until consumed or expired |

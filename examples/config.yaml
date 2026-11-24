@@ -38,6 +38,7 @@ defaults:                # for rules that do not set these themselves
   pass_after: 1          # consecutive passes before the state becomes "pass" again
   output_tail: 10k       # tail of stdout/stderr/response body kept in each result
   event_params: true     # events carry rule params as written here; false hides a rule's details
+  remind_every: 60m      # a rule that stays failed writes a reminder event this often; 0 = never
 
 modules:
   repos:                 # searched by "onecheck module search" without arguments
