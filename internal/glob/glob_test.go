@@ -45,11 +45,3 @@ func TestCompileMalformed(t *testing.T) {
 		}
 	}
 }
-
-func TestHas(t *testing.T) {
-	for p, want := range map[string]bool{"nginx": false, "app-*": true, "web-?": true, "[ab]": true} {
-		if Has(p) != want {
-			t.Errorf("Has(%q) = %v", p, !want)
-		}
-	}
-}

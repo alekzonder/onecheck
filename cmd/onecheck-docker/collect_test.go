@@ -162,12 +162,12 @@ func TestCollectAllContainers(t *testing.T) {
 func TestCollectFilters(t *testing.T) {
 	startFake(t)
 	cases := map[string]string{
-		`{"name":"nginx"}`:                                  "nginx",
-		`{"name":"ngin"}`:                                   "",
-		`{"name":"web-*"}`:                                  "web-1",
-		`{"label":"com.docker.compose.project"}`:            "old,web-1",
-		`{"label":"com.docker.compose.project=shop"}`:       "web-1",
-		`{"name":"*","label":"com.docker.compose.project"}`: "old,web-1",
+		`{"name":"nginx"}`:                                           "nginx",
+		`{"name":"ngin"}`:                                            "",
+		`{"name":"web-*"}`:                                           "web-1",
+		`{"label":"com.docker.compose.project"}`:                     "old,web-1",
+		`{"label":"com.docker.compose.project=shop"}`:                "web-1",
+		`{"name":"*","label":"com.docker.compose.project"}`:          "old,web-1",
 		`{"name":"nginx","label":"com.docker.compose.project=shop"}`: "",
 	}
 	for params, want := range cases {

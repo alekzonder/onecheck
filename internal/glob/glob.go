@@ -11,10 +11,6 @@ import (
 	"strings"
 )
 
-// Has reports whether s contains pattern characters, i.e. is a pattern and
-// not a plain name.
-func Has(s string) bool { return strings.ContainsAny(s, "*?[") }
-
 // Compile turns a shell pattern into an anchored, case-sensitive regexp.
 func Compile(pattern string) (*regexp.Regexp, error) {
 	var b strings.Builder
