@@ -66,8 +66,10 @@ rule covers every disk, present and future.
   point, which can then be put into `exclude_mount`. Exclusions are applied
   before querying, so an excluded filesystem is never touched (a hung NFS
   mount can be excluded).
-- **Order of work.** Filter by type and patterns, drop duplicates, then
-  `statfs` each, then drop zero-sized ones.
+- **Order of work.** Keep real types, drop duplicates, apply the exclude
+  patterns, then `statfs` each, then drop zero-sized ones. Duplicates go
+  before the patterns so that excluding a filesystem by its mount point
+  does not bring it back under another mount point of the same device.
 - macOS: the same rules; APFS volumes of one container are different
   devices and are all listed, `exclude_mount: ["/System/Volumes/*"]` narrows
   them. Documented, not special-cased.
