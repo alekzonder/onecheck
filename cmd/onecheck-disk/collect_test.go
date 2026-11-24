@@ -87,6 +87,7 @@ func TestDescribeListsFields(t *testing.T) {
 		"inodes_free": module.TypeNumber, "inodes_used": module.TypeNumber,
 		"inodes_used_percent": module.TypeNumber, "mountpoint": module.TypeString,
 		"device": module.TypeString, "fstype": module.TypeString,
+		"filesystems": module.TypeArray, "count": module.TypeNumber,
 	}
 	fields := mod.Description.Fields
 	if len(fields) != len(want) {

@@ -1,5 +1,5 @@
 // Command onecheck-disk is the onecheck module that reports space and inode
-// usage of a filesystem.
+// usage of a filesystem, or of every filesystem of the host.
 package main
 
 import (
@@ -12,9 +12,10 @@ import (
 const paramsSchema = `{
   "type": "object",
   "additionalProperties": false,
-  "required": ["path"],
   "properties": {
-    "path": {"type": "string", "minLength": 1, "description": "mount point, any path inside a filesystem, or a device under /dev/"}
+    "path": {"type": "string", "minLength": 1, "description": "mount point, any path inside a filesystem, or a device under /dev/; all filesystems of the host are listed when omitted"},
+    "exclude_fstype": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "without path: shell patterns of filesystem types to leave out"},
+    "exclude_mount": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "without path: shell patterns of mount points to leave out"}
   }
 }`
 
@@ -22,7 +23,7 @@ var mod = module.Module{
 	Description: module.Description{
 		Name:         "disk",
 		Version:      version.Version,
-		Description:  "Report free space and inodes of the filesystem holding a path or device",
+		Description:  "Report free space and inodes of the filesystem holding a path or device, or of every filesystem of the host",
 		ParamsSchema: json.RawMessage(paramsSchema),
 		Fields: map[string]module.FieldInfo{
 			"total":               {Type: module.TypeBytes, Description: "size of the filesystem"},
@@ -36,6 +37,12 @@ var mod = module.Module{
 			"mountpoint":          {Type: module.TypeString, Description: "where the filesystem is mounted"},
 			"device":              {Type: module.TypeString, Description: "mounted device as in the mount table"},
 			"fstype":              {Type: module.TypeString, Description: "filesystem type, e.g. ext4, xfs, apfs"},
+			"filesystems": {
+				Type:        module.TypeArray,
+				Description: "without params.path: the real filesystems of the host, one per device, sorted by mount point; each has the fields above",
+				Elements:    map[string]module.FieldType{"total": module.TypeBytes, "free": module.TypeBytes, "used": module.TypeBytes},
+			},
+			"count": {Type: module.TypeNumber, Description: "without params.path: number of filesystems"},
 		},
 	},
 	Collect: collect,

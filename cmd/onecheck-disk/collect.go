@@ -14,7 +14,10 @@ import (
 )
 
 type params struct {
-	Path string `json:"path"`
+	// Path is nil when the rule gives none: then all filesystems are listed.
+	Path          *string  `json:"path"`
+	ExcludeFSType []string `json:"exclude_fstype"`
+	ExcludeMount  []string `json:"exclude_mount"`
 }
 
 func collect(_ context.Context, req module.Request) (map[string]any, error) {
@@ -22,10 +25,20 @@ func collect(_ context.Context, req module.Request) (map[string]any, error) {
 	if err := module.DecodeParams(req.Params, &p); err != nil {
 		return nil, err
 	}
-	if p.Path == "" {
-		return nil, errors.New("invalid params: path is required")
+	if p.Path == nil {
+		ms, err := mountTable()
+		if err != nil {
+			return nil, fmt.Errorf("cannot read the mount table: %w", err)
+		}
+		return listFilesystems(ms, statMount, p)
 	}
-	target, entry, err := resolveTarget(p.Path)
+	if len(p.ExcludeFSType) > 0 || len(p.ExcludeMount) > 0 {
+		return nil, errors.New("invalid params: exclude_fstype and exclude_mount work without path, for the list of all filesystems")
+	}
+	if *p.Path == "" {
+		return nil, errors.New("invalid params: path is empty; leave it out to list all filesystems")
+	}
+	target, entry, err := resolveTarget(*p.Path)
 	if err != nil {
 		return nil, err
 	}
