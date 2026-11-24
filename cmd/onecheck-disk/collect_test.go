@@ -63,6 +63,14 @@ func TestCollectMissingPathIsError(t *testing.T) {
 	}
 }
 
+func TestCollectMissingNestedPathNamesTheWholePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "no", "such")
+	_, err := collectPath(t, path)
+	if err == nil || err.Error() != "path "+path+" does not exist" {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestCollectEmptyPathIsError(t *testing.T) {
 	if _, err := collectPath(t, ""); err == nil {
 		t.Error("empty path accepted")

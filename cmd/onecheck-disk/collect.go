@@ -60,6 +60,9 @@ func resolveTarget(path string) (string, *mount, error) {
 		return "", nil, err
 	}
 	real, err := filepath.EvalSymlinks(abs)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil, fmt.Errorf("path %s does not exist", path)
+	}
 	if err != nil {
 		return "", nil, err
 	}
