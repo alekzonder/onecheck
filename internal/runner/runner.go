@@ -75,7 +75,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options, log *slog.Logger
 	}
 	now := time.Now().UTC()
 	for i := range results {
-		if err := record(st, cfg, &results[i], now, log); err != nil {
+		if err := record(st, cfg, jobs[i].rule, &results[i], now, log); err != nil {
 			return results[:i], fmt.Errorf("rule %s: %w", results[i].Rule, err)
 		}
 	}
@@ -213,7 +213,7 @@ func runOne(ctx context.Context, cfg *config.Config, job prepared, log *slog.Log
 // the event (if the confirmed state changed), the state and the result. If
 // the event cannot be written the state stays untouched, so the transition
 // is detected again on the next run instead of being lost.
-func record(st *store.Store, cfg *config.Config, res *result.Result, now time.Time, log *slog.Logger) error {
+func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.Result, now time.Time, log *slog.Logger) error {
 	prev, err := st.LoadState(res.Rule)
 	if errors.Is(err, store.ErrCorrupt) {
 		log.Warn("state file is corrupt, treating the rule as new", "rule", res.Rule, "error", err)
@@ -239,7 +239,11 @@ func record(st *store.Store, cfg *config.Config, res *result.Result, now time.Ti
 			To:         next.State,
 			At:         now,
 			ExpiresAt:  now.Add(time.Duration(cfg.Events.TTL)),
+			Redacted:   !rule.EventParams,
 			Result:     *res,
+		}
+		if rule.EventParams {
+			event.Params = rule.RawParams
 		}
 		if err := st.WriteEvent(event); err != nil {
 			return fmt.Errorf("cannot write event: %w", err)

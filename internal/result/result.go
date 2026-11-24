@@ -75,5 +75,11 @@ type Event struct {
 	To         string    `json:"to"`
 	At         time.Time `json:"at"`
 	ExpiresAt  time.Time `json:"expires_at"`
-	Result     Result    `json:"result"`
+	// Params is the rule's params as written in the config, before ${VAR}
+	// expansion; null when the rule has none or hides them.
+	Params map[string]any `json:"params"`
+	// Redacted is true when the rule has event_params: false: a consumer
+	// must not show the details of the result to third parties.
+	Redacted bool   `json:"redacted"`
+	Result   Result `json:"result"`
 }

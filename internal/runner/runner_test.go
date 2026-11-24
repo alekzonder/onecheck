@@ -699,3 +699,100 @@ func TestHTTPBodyAndHeadersAreSaved(t *testing.T) {
 		t.Errorf("headers = %v", res[0].Output["headers"])
 	}
 }
+
+// eventJSON returns the only event of the env as raw JSON keys.
+func (e *env) eventJSON() map[string]json.RawMessage {
+	e.t.Helper()
+	files, _ := filepath.Glob(filepath.Join(e.dir, "events", "*.json"))
+	if len(files) != 1 {
+		e.t.Fatalf("want one event, got %d", len(files))
+	}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(data, &out); err != nil {
+		e.t.Fatal(err)
+	}
+	return out
+}
+
+func TestEventCarriesRawParams(t *testing.T) {
+	var gotToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.Header.Get("X-Token")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	t.Setenv("ONECHECK_TEST_TOKEN", "s3cret")
+	e := newEnv(t)
+	e.run(`
+  - name: api
+    module: http
+    params:
+      url: `+srv.URL+`
+      headers: {X-Token: "${ONECHECK_TEST_TOKEN}"}
+    check: {status: 200}
+`, Options{})
+	if gotToken != "s3cret" {
+		t.Errorf("the module must get the expanded value, the server saw %q", gotToken)
+	}
+	ev := e.eventJSON()
+	if string(ev["redacted"]) != "false" {
+		t.Errorf("redacted = %s", ev["redacted"])
+	}
+	params := string(ev["params"])
+	if !strings.Contains(params, "${ONECHECK_TEST_TOKEN}") || strings.Contains(params, "s3cret") {
+		t.Errorf("params = %s", params)
+	}
+	var whole []byte
+	for _, v := range ev {
+		whole = append(whole, v...)
+	}
+	if strings.Contains(string(whole), "s3cret") {
+		t.Errorf("the event holds the expanded secret: %s", whole)
+	}
+}
+
+func TestEventParamsHidden(t *testing.T) {
+	e := newEnv(t)
+	e.run(`
+  - name: gone
+    module: file
+    event_params: false
+    params: {path: DATA/missing.txt}
+    check: {exists: true}
+`, Options{})
+	ev := e.eventJSON()
+	if string(ev["params"]) != "null" || string(ev["redacted"]) != "true" {
+		t.Errorf("params = %s, redacted = %s", ev["params"], ev["redacted"])
+	}
+}
+
+func TestEventWithoutParams(t *testing.T) {
+	e := newEnv(t)
+	e.run(`
+  - name: bare
+    module: command
+    check: {exit_code: 0}
+`, Options{})
+	ev := e.eventJSON()
+	if string(ev["params"]) != "null" || string(ev["redacted"]) != "false" {
+		t.Errorf("params = %s, redacted = %s", ev["params"], ev["redacted"])
+	}
+}
+
+func TestEventOfAnInvalidRuleHasNoExpandedParams(t *testing.T) {
+	e := newEnv(t)
+	e.run(`
+  - name: broken
+    module: http
+    params: {url: "https://example.com/${ONECHECK_TEST_UNSET_VAR}"}
+    check: {status: 200}
+`, Options{})
+	ev := e.eventJSON()
+	if !strings.Contains(string(ev["params"]), "${ONECHECK_TEST_UNSET_VAR}") {
+		t.Errorf("params = %s", ev["params"])
+	}
+}
