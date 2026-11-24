@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/alekzonder/onecheck/pkg/module"
 )
@@ -28,9 +29,12 @@ func collect(_ context.Context, req module.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	u, err := statfs(target)
+	u, own, err := statfs(target)
 	if err != nil {
 		return nil, fmt.Errorf("statfs %s: %w", target, err)
+	}
+	if own != nil {
+		entry = own
 	}
 	out := usageFields(u)
 	if entry != nil {
@@ -70,7 +74,7 @@ func resolveTarget(path string) (string, *mount, error) {
 	if err != nil {
 		return real, nil, nil
 	}
-	if m, ok := mountOf(ms, real); ok {
+	if m, ok := mountOf(ms, real, sameFilesystem(real)); ok {
 		return real, &m, nil
 	}
 	return real, nil, nil
@@ -95,4 +99,30 @@ func resolveLink(p string) string {
 		return real
 	}
 	return p
+}
+
+// sameFilesystem returns a test whether a mount point is on the same
+// filesystem as path, by comparing device numbers. If path cannot be
+// stat'ed, every mount point passes.
+func sameFilesystem(path string) func(string) bool {
+	dev, ok := deviceOf(path)
+	if !ok {
+		return nil
+	}
+	return func(mountpoint string) bool {
+		other, ok := deviceOf(mountpoint)
+		return !ok || other == dev
+	}
+}
+
+func deviceOf(path string) (uint64, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return uint64(st.Dev), true //nolint:gosec,unconvert // Dev is int32 on darwin, uint64 on linux
 }

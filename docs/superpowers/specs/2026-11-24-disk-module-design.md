@@ -67,13 +67,16 @@ Percentages are floats rounded to two decimals.
 - A path that does not exist, a device that is not mounted, or a statfs
   failure is an error (status `error`), not a failure: the check cannot be
   carried out.
-- Filesystems that report `inodes_total == 0` (btrfs, zfs and others with no
+- Filesystems that report `inodes_total == 0` (btrfs and others with no
   fixed inode count) return no `inodes_*` fields; a condition on them fails
   with "field is missing". Showing 0 % would hide the fact that the number is
   meaningless. (Our call.)
-- `mountpoint`, `device`, `fstype` come from the mount table entry with the
-  longest mount point that contains the path (Linux: `/proc/self/mounts`;
-  macOS: `getfsstat`). If the mount table cannot be read, these three fields
+- `mountpoint`, `device`, `fstype`: on Linux, the `/proc/self/mounts` entry
+  with the longest mount point that contains the path and is on the same
+  filesystem (same `st_dev`; a later mount over a parent hides deeper mount
+  points). On macOS, taken from the `statfs` result itself, because
+  firmlinks (`/Users`, `/private`) lead to the Data volume, which a prefix
+  lookup would miss; `getfsstat` is used only to find devices. If the mount table cannot be read, these three fields
   are omitted and the numeric fields are still returned.
 - A device path is recognised as a path under `/dev/` that is a block or
   character device; it is resolved through the mount table (symlinks such as

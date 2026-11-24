@@ -17,6 +17,9 @@ out of space, so check both.
 - A device under `/dev/` (`/dev/sda1`, `/dev/mapper/vg-data`,
   `/dev/disk/by-uuid/...`): its mount point is looked up in the mount table.
   Symlinks are resolved on both sides, so any name of the device works.
+  A root filesystem listed in the mount table under a name that does not
+  exist on disk (`/dev/root` on some systems) cannot be found by device;
+  use its mount point, `/`, instead.
 
 One rule checks one filesystem; write one rule per disk. Checking all disks
 automatically is not supported yet.
@@ -49,8 +52,10 @@ See [checks.md](../checks.md#gt-gte-lt-lte).
 Which fields are present:
 
 - `inodes_*` are missing on filesystems without a fixed number of inodes
-  (btrfs, zfs and some others report 0). A condition on them then fails with
+  (btrfs and some others report 0). A condition on them then fails with
   "got nothing (path is missing)"; leave inode conditions out for such disks.
+  ZFS reports an inode count that grows and shrinks with free space, so
+  `inodes_used_percent` on ZFS mostly repeats `used_percent`.
 - `mountpoint`, `device` and `fstype` are missing if the mount table cannot
   be read; the numbers are still reported.
 

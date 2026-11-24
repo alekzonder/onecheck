@@ -44,12 +44,14 @@ func unescape(s string) string {
 
 // mountOf returns the entry with the longest mount point that holds path.
 // On equal mount points the later entry wins: it is mounted over the
-// earlier one.
-func mountOf(ms []mount, path string) (mount, bool) {
+// earlier one. If same is not nil, only entries whose mount point is on the
+// same filesystem as path are considered: a mount point can be hidden by a
+// later mount over one of its parents.
+func mountOf(ms []mount, path string, same func(mountpoint string) bool) (mount, bool) {
 	var best mount
 	found := false
 	for _, m := range ms {
-		if !contains(m.Mountpoint, path) {
+		if !contains(m.Mountpoint, path) || (same != nil && !same(m.Mountpoint)) {
 			continue
 		}
 		if !found || len(m.Mountpoint) >= len(best.Mountpoint) {

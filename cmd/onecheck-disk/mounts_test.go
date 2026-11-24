@@ -41,19 +41,19 @@ func TestMountOfLongestPrefix(t *testing.T) {
 		"/mnt/my diskette":  "/",
 	}
 	for path, want := range cases {
-		m, ok := mountOf(ms, path)
+		m, ok := mountOf(ms, path, nil)
 		if !ok || m.Mountpoint != want {
 			t.Errorf("mountOf(%q) = %q, %v; want %q", path, m.Mountpoint, ok, want)
 		}
 	}
-	if _, ok := mountOf(nil, "/x"); ok {
+	if _, ok := mountOf(nil, "/x", nil); ok {
 		t.Error("empty table must not match")
 	}
 }
 
 func TestMountOfLaterEntryWins(t *testing.T) {
 	ms := parseMounts("/dev/sda2 /var xfs rw 0 0\ntmpfs /var tmpfs rw 0 0\n")
-	if m, _ := mountOf(ms, "/var/x"); m.Device != "tmpfs" {
+	if m, _ := mountOf(ms, "/var/x", nil); m.Device != "tmpfs" {
 		t.Errorf("got %+v, want the later overmount", m)
 	}
 }
@@ -75,5 +75,18 @@ func TestMountOfDeviceResolvesSymlinks(t *testing.T) {
 	}
 	if _, ok := mountOfDevice(ms, "/dev/sdz9", resolve); ok {
 		t.Error("unmounted device matched")
+	}
+}
+
+func TestMountOfSkipsEntriesOfAnotherFilesystem(t *testing.T) {
+	// /dev/sdb on /mnt/a/b, then /dev/sdc mounted over /mnt/a hides it:
+	// /mnt/a/b now lies on sdc.
+	ms := parseMounts("/dev/sda1 / ext4 rw 0 0\n/dev/sdb /mnt/a/b ext4 rw 0 0\n/dev/sdc /mnt/a ext4 rw 0 0\n")
+	same := func(mp string) bool { return mp != "/mnt/a/b" }
+	if m, ok := mountOf(ms, "/mnt/a/b", same); !ok || m.Device != "/dev/sdc" {
+		t.Errorf("got %+v, %v; want /dev/sdc", m, ok)
+	}
+	if _, ok := mountOf(ms, "/mnt/a/b", func(string) bool { return false }); ok {
+		t.Error("matched although no entry is on the same filesystem")
 	}
 }

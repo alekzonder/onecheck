@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -42,17 +43,19 @@ func TestCollectTempDir(t *testing.T) {
 }
 
 func TestCollectFollowsSymlinks(t *testing.T) {
-	dir := t.TempDir()
-	link := filepath.Join(dir, "link")
-	if err := os.Symlink(dir, link); err != nil {
+	if runtime.GOOS != "linux" {
+		t.Skip("needs /proc as a separate filesystem")
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink("/proc", link); err != nil {
 		t.Fatal(err)
 	}
 	f, err := collectPath(t, link)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
-	if f["mountpoint"] == nil {
-		t.Errorf("no mountpoint for a symlinked path: %v", f)
+	if f["mountpoint"] != "/proc" || f["fstype"] != "proc" {
+		t.Errorf("got mountpoint %v fstype %v, want the filesystem of the link target", f["mountpoint"], f["fstype"])
 	}
 }
 

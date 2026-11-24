@@ -5,10 +5,12 @@ import (
 	"syscall"
 )
 
-func statfs(path string) (usage, error) {
+// statfs returns the usage of the filesystem holding path. On Linux the
+// mount entry comes from /proc/self/mounts, so the second value is nil.
+func statfs(path string) (usage, *mount, error) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(path, &st); err != nil {
-		return usage{}, err
+		return usage{}, nil, err
 	}
 	bs := uint64(st.Frsize)
 	if bs == 0 {
@@ -20,7 +22,7 @@ func statfs(path string) (usage, error) {
 		Avail:     st.Bavail * bs,
 		Files:     st.Files,
 		FilesFree: st.Ffree,
-	}, nil
+	}, nil, nil
 }
 
 func mountTable() ([]mount, error) {

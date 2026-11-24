@@ -27,7 +27,7 @@ Rules for anyone (human or AI agent) changing this repository.
 | Path | What lives there |
 |---|---|
 | `cmd/onecheck` | core CLI entrypoint |
-| `cmd/onecheck-<name>` | bundled check modules (`file`, `http`, `command`) |
+| `cmd/onecheck-<name>` | bundled check modules (`file`, `http`, `command`, `disk`) |
 | `pkg/module` | public SDK and protocol types for module authors |
 | `internal/match` | the single matching engine (all operators) |
 | `internal/config` | config discovery, loading, includes |
