@@ -82,6 +82,8 @@ read as operators.
 | [`exists`](#exists) | anything | the path is present (`true`) or absent (`false`) |
 | [`type`](#type) | anything | the value has this JSON type |
 | [`length`](#length) | string, array, object | a nested condition holds for the length |
+| [`every`](#every-some) / `some` | array | a nested condition holds for each / at least one element |
+| [`path`](#path) | anything | the other operators apply to a value inside this one |
 | [`json`](#json) | string | the string is JSON and satisfies `assert` / `schema` |
 
 An operator applied to a value of the wrong type (for example `gt` on a
@@ -228,6 +230,66 @@ stdout: { length: { gt: 0 } }          # not empty
 body: { length: { lte: 4096 } }
 items: { length: 3 }
 ```
+
+### `every`, `some`
+
+Apply a condition to the elements of an array. The argument is a condition;
+a list of conditions means all of them.
+
+```yaml
+containers:
+  every:                                   # each element must satisfy all
+    - { path: state, equals: running }
+    - { path: restart_count, lt: 5 }
+tags: { some: { glob: "env-*" } }          # at least one element
+```
+
+| | holds when | empty array |
+|---|---|---|
+| `every` | the condition holds for each element | holds |
+| `some` | the condition holds for at least one element | does not hold |
+
+A value that is not an array, or a missing path, does not hold.
+
+`every` reports each failing element separately, with its index in the
+path: `containers.2.state: expected equals "running", got "exited"`. When an
+element fails an `any`, the message shows the whole element, so you see which
+one it was:
+
+```
+containers.#(state=="running")#.1: expected any [...], got {"image":"xmrig/xmrig","name":"miner",...}
+```
+
+`some` reports one failure with the whole array.
+
+Combine with a [GJSON query](#paths) to pick elements first, for example only
+running containers:
+
+```yaml
+containers.#(state=="running")#:
+  every:
+    any:
+      - { path: name,  in: [nginx, postgres] }
+      - { path: image, glob: "registry.local/*" }
+```
+
+A query that matches nothing gives an empty array: `every` holds, `some`
+does not.
+
+### `path`
+
+Inside any condition mapping, `path` moves the other operators of that
+mapping to a value inside the current one. It is how conditions reach the
+fields of array elements:
+
+```yaml
+containers.0: { path: state, equals: running }   # same as containers.0.state: running
+```
+
+`path` uses the same [GJSON syntax](#paths) as check keys and needs at least
+one operator next to it. A missing sub-path is handled like any
+[missing value](#missing-values). Unit literals (`10MB`, `1h`) do not apply
+under `path`: compare with plain numbers.
 
 ### `json`
 

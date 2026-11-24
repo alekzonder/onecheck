@@ -393,3 +393,104 @@ func TestEmptyCheck(t *testing.T) {
 		t.Errorf("empty check must pass: %v %v", f, err)
 	}
 }
+
+const containerFields = `{
+  "c": [
+    {"name": "nginx", "image": "nginx:1.27", "state": "running", "restarts": 0},
+    {"name": "miner", "image": "xmrig/xmrig", "state": "running", "restarts": 7},
+    {"name": "old", "image": "registry.local/old:1", "state": "exited", "restarts": 0}
+  ],
+  "e": [],
+  "s": "text"
+}`
+
+func evalOn(t *testing.T, fieldsJSON, checkYAML string) []Failure {
+	t.Helper()
+	var raw map[string]any
+	if err := yaml.Unmarshal([]byte(checkYAML), &raw); err != nil {
+		t.Fatalf("bad test yaml: %v", err)
+	}
+	c, err := Compile(raw, nil)
+	if err != nil {
+		t.Fatalf("compile %q: %v", checkYAML, err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(fieldsJSON), &fields); err != nil {
+		t.Fatal(err)
+	}
+	failures, err := c.Eval(fields, nil)
+	if err != nil {
+		t.Fatalf("eval %q: %v", checkYAML, err)
+	}
+	return failures
+}
+
+func TestArrayConditions(t *testing.T) {
+	cases := []struct {
+		name  string
+		check string
+		fails int
+	}{
+		{"path", `c.0: {path: state, equals: running}`, 0},
+		{"path fail", `c.2: {path: state, equals: running}`, 1},
+		{"path missing", `c.0: {path: nope, equals: 1}`, 1},
+		{"path exists false", `c.0: {path: nope, exists: false}`, 0},
+		{"every", `c: {every: {path: name, exists: true}}`, 0},
+		{"every fail per element", `c: {every: {path: state, equals: running}}`, 1},
+		{"every list is all", `c: {every: [{path: state, equals: running}, {path: restarts, lt: 5}]}`, 2},
+		{"every scalar shorthand", `c.#.state: {every: running}`, 1},
+		{"every empty array", `e: {every: {equals: 1}}`, 0},
+		{"every filtered empty", `c.#(state=="paused")#: {every: {equals: 1}}`, 0},
+		{"every not array", `s: {every: {equals: 1}}`, 1},
+		{"every missing", `nope: {every: {equals: 1}}`, 1},
+		{"some", `c: {some: {path: name, equals: nginx}}`, 0},
+		{"some glob", `c.#.image: {some: {glob: "registry.local/*"}}`, 0},
+		{"some fail", `c: {some: {path: name, equals: redis}}`, 1},
+		{"some empty array", `e: {some: {equals: 1}}`, 1},
+		{"not some", `c: {not: {some: {path: name, equals: miner}}}`, 1},
+		{"strangers", `c.#(state=="running")#: {every: {any: [{path: name, in: [nginx]}, {path: image, glob: "registry.local/*"}]}}`, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := evalOn(t, containerFields, c.check); len(got) != c.fails {
+				t.Errorf("%d failures, want %d: %+v", len(got), c.fails, got)
+			}
+		})
+	}
+}
+
+func TestEveryFailureNamesElement(t *testing.T) {
+	got := evalOn(t, containerFields, `c: {every: {path: state, equals: running}}`)
+	if len(got) != 1 || got[0].Path != "c.2.state" || !strings.HasPrefix(got[0].Message, `c.2.state: expected equals "running", got "exited"`) {
+		t.Errorf("failures = %+v", got)
+	}
+}
+
+func TestEveryAnyCarriesElement(t *testing.T) {
+	got := evalOn(t, containerFields,
+		`c.#(state=="running")#: {every: {any: [{path: name, in: [nginx]}, {path: image, glob: "registry.local/*"}]}}`)
+	if len(got) != 1 || !strings.Contains(got[0].Message, `"name":"miner"`) || !strings.Contains(got[0].Message, `.1:`) {
+		t.Errorf("failures = %+v", got)
+	}
+}
+
+func TestSomeFailureMessage(t *testing.T) {
+	got := evalOn(t, containerFields, `c.#.name: {some: {equals: redis}}`)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "expected some") || !strings.Contains(got[0].Message, "miner") {
+		t.Errorf("failures = %+v", got)
+	}
+}
+
+func TestArrayConditionCompileErrors(t *testing.T) {
+	for _, check := range []string{
+		`items: {path: x}`,
+		`items: {path: 1, equals: 2}`,
+		`items: {every: []}`,
+		`items: {some: {}}`,
+		`items: {every: {path: x, equal: 1}}`,
+	} {
+		if _, err := compile(t, check); err == nil {
+			t.Errorf("%s must not compile", check)
+		}
+	}
+}

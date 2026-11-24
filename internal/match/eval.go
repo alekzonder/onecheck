@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -197,6 +198,96 @@ func (n lengthNode) eval(r recorder, v value) bool {
 	}
 	r.prefix += "length "
 	return n.inner.eval(r, value{v: float64(length), exists: true})
+}
+
+// child returns a recorder for a value inside the current one: an element
+// index or a sub-path.
+func (r recorder) child(seg string) recorder {
+	if r.jsonPath != "" {
+		r.jsonPath += "." + seg
+	} else {
+		r.path += "." + seg
+	}
+	r.prefix = ""
+	return r
+}
+
+// pathNode applies a condition to the value at a path inside the current
+// value.
+type pathNode struct {
+	path  string
+	inner node
+}
+
+func (n pathNode) missingAware() bool { return n.inner.missingAware() }
+
+func (n pathNode) eval(r recorder, v value) bool {
+	sub := value{}
+	if v.exists {
+		data, err := json.Marshal(v.v)
+		if err == nil {
+			sub = lookup(data, n.path)
+		}
+	}
+	return n.inner.eval(r.child(n.path), sub)
+}
+
+// elements returns the array a condition on elements applies to, or records
+// why there is none.
+func elements(r recorder, op string, raw any, v value) ([]any, bool) {
+	if !v.exists {
+		r.fail(op, raw, v, "")
+		return nil, false
+	}
+	arr, ok := v.v.([]any)
+	if !ok {
+		r.fail(op, raw, v, "not applicable to a "+typeName(v.v))
+	}
+	return arr, ok
+}
+
+// everyNode holds when its condition holds for each element of an array;
+// every failing element reports its own failures.
+type everyNode struct {
+	inner node
+	raw   any
+}
+
+func (n everyNode) missingAware() bool { return false }
+
+func (n everyNode) eval(r recorder, v value) bool {
+	arr, ok := elements(r, "every", n.raw, v)
+	if !ok {
+		return false
+	}
+	for i, el := range arr {
+		if !n.inner.eval(r.child(strconv.Itoa(i)), value{v: el, exists: true}) {
+			ok = false
+		}
+	}
+	return ok
+}
+
+// someNode holds when its condition holds for at least one element.
+type someNode struct {
+	inner node
+	raw   any
+}
+
+func (n someNode) missingAware() bool { return false }
+
+func (n someNode) eval(r recorder, v value) bool {
+	arr, ok := elements(r, "some", n.raw, v)
+	if !ok {
+		return false
+	}
+	for i, el := range arr {
+		if n.inner.eval(r.child(strconv.Itoa(i)).scratch(), value{v: el, exists: true}) {
+			return true
+		}
+	}
+	r.fail("some", n.raw, v, "")
+	return false
 }
 
 // Eval checks the collected fields against the compiled conditions. It

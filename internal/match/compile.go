@@ -100,6 +100,9 @@ func compileCond(raw any, ft module.FieldType) (node, error) {
 	if len(ops) == 0 {
 		return nil, fmt.Errorf("empty condition")
 	}
+	if p, has := ops["path"]; has {
+		return compilePath(p, ops)
+	}
 	names := make([]string, 0, len(ops))
 	for name := range ops {
 		names = append(names, name)
@@ -119,8 +122,53 @@ func compileCond(raw any, ft module.FieldType) (node, error) {
 	return nodes, nil
 }
 
+// compilePath compiles a condition mapping with a "path" key: the other
+// operators apply to the value at that path inside the current value.
+func compilePath(p any, ops map[string]any) (node, error) {
+	path, ok := p.(string)
+	if !ok || path == "" {
+		return nil, fmt.Errorf("path: needs a non-empty string, got %s", toJSON(p))
+	}
+	rest := make(map[string]any, len(ops)-1)
+	for k, v := range ops {
+		if k != "path" {
+			rest[k] = v
+		}
+	}
+	if len(rest) == 0 {
+		return nil, fmt.Errorf("path %q: needs at least one operator next to it", path)
+	}
+	inner, err := compileCond(rest, "")
+	if err != nil {
+		return nil, fmt.Errorf("path %q: %w", path, err)
+	}
+	return pathNode{path: path, inner: inner}, nil
+}
+
+// compileElem compiles the argument of every/some: a condition, or a list
+// of conditions that must all hold.
+func compileElem(name string, arg any) (node, error) {
+	if _, isList := arg.([]any); isList {
+		return compileList(name, arg, "")
+	}
+	inner, err := compileCond(arg, "")
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return inner, nil
+}
+
 func compileOp(name string, arg any, ft module.FieldType) (node, error) {
 	switch name {
+	case "every", "some":
+		inner, err := compileElem(name, arg)
+		if err != nil {
+			return nil, err
+		}
+		if name == "some" {
+			return someNode{inner: inner, raw: arg}, nil
+		}
+		return everyNode{inner: inner, raw: arg}, nil
 	case "all", "any":
 		children, err := compileList(name, arg, ft)
 		if err != nil {
@@ -179,7 +227,7 @@ func compileList(name string, arg any, ft module.FieldType) (allNode, error) {
 }
 
 func operatorNames() string {
-	names := []string{"all", "any", "not", "length", "exists", "json"}
+	names := []string{"all", "any", "not", "length", "exists", "json", "every", "some", "path"}
 	for n := range leafOps {
 		names = append(names, n)
 	}
