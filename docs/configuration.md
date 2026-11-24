@@ -56,6 +56,7 @@ rules:
     pass_after: 2             # consecutive passes before state "pass" again
     output_tail: 1k           # output kept in the result; 0 keeps none
     event_params: true        # false: no params in events, events marked "redacted"
+    event_output: [body]      # output fields a notification may show; default: none
     remind_every: 60m         # reminder events while the state stays "fail"; 0 = never
     params:                   # input of the module, see docs/modules/
       url: https://example.com/health
@@ -67,7 +68,8 @@ Every key except `name` is optional; the values above are the defaults for
 root. Sizes accept `B`, `KB`, `MB`, `GB`, `TB` (1024-based); durations accept
 `ms`, `s`, `m`, `h`, `d`, `w` and combinations such as `1h30m`.
 
-`remind_every` is described in [State and events](/state-and-events#reminders).
+`remind_every` is described in [State and events](/state-and-events#reminders),
+`event_output` in [State and events](/state-and-events#output-in-notifications).
 
 ## `name`
 

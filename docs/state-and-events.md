@@ -160,6 +160,7 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
     "headers": { "Authorization": "Bearer ${API_TOKEN}" }
   },
   "redacted": false,
+  "output_fields": [],
   "result": {
     "config": "main",
     "rule": "api-health",
@@ -204,6 +205,7 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
 | `since` | when the state in `to` began: equal to `at` for `fail` and `recovered`, the time of the `fail` event for a reminder |
 | `params` | the rule's `params` exactly as written in the config, before `${VAR}` is replaced; `null` when the rule has none or has `event_params: false` |
 | `redacted` | `true` when the rule has `event_params: false`: a consumer must not show the details of this event (params, failures, error) to third parties |
+| `output_fields` | names of the keys of `result.output` the rule allows a notification to show, from the rule's [`event_output`](#output-in-notifications); `[]` unless the rule says otherwise, and always `[]` with `event_params: false` |
 | `result` | the full result of the run that wrote the event, see [Output and results](/output-and-results#result-format) |
 
 For a `recovered` event, `result` is the passing run (`failures` is empty).
@@ -226,6 +228,7 @@ back to the start of the problem (`result` is left out here):
   "since": "2026-11-23T10:02:00Z",
   "params": { "url": "https://example.com/health" },
   "redacted": false,
+  "output_fields": [],
   "result": { "status": "fail", "state": "fail", "transition": "reminder", "consecutive": 63 }
 }
 ```
@@ -270,6 +273,35 @@ The event is still written, with its full `result`: `redacted` is an
 instruction to the consumer. onenotify then sends only the rule name, the
 module, the tags and the time. `event_params` can be set for all rules in
 `defaults`.
+
+### Output in notifications
+
+`result.output` holds what the module saw: a command's stdout and stderr, a
+response body and headers. It is in every event, but a notification does not
+show it: output can contain anything. A rule whose output is safe and useful
+to read says which part may be shown:
+
+```yaml
+rules:
+  - name: backup
+    module: command
+    event_output: [stderr]      # a notification may show stderr, not stdout
+    params: { run: /usr/local/bin/backup.sh }
+    check: { exit_code: 0 }
+```
+
+The event then has `"output_fields": ["stderr"]`. This is only a mark for
+the consumer: the event's `result.output` is the same with or without it.
+
+- Only output fields of the rule's module can be named: `stdout` and
+  `stderr` for `command`, `body` and `headers` for `http`. Another name, or
+  any name for a module without output fields, makes the rule an `error`.
+- The default is to show nothing. `event_output` is a key of a rule; there is
+  none in `defaults`, because output fields differ between modules.
+- `event_params: false` is stronger: the event has `"output_fields": []`.
+- How much output exists is still decided by `output_tail`, see
+  [Output and results](/output-and-results#saved-output). With
+  `output_tail: 0` there is nothing to show.
 
 ### Consuming the queue
 
