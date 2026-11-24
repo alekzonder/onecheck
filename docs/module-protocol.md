@@ -70,6 +70,17 @@ Field types:
 | `bytes` | number of bytes | conditions may use `10MB` etc. |
 | `duration` | number of seconds, may be fractional | conditions may use `500ms`, `1h` etc. |
 
+`onecheck validate` checks `params` against `params_schema` only, without
+starting a check, so put every rule about params into the schema, including
+params that do not go together. A param forbidden in a combination is
+written as `false`, which onecheck reports as "not allowed together with the
+other params":
+
+```json
+"if": { "required": ["path"] },
+"then": { "properties": { "exclude_mount": false } }
+```
+
 An `array` field whose elements are objects may give the types of the keys
 of an element in `elements`:
 

@@ -236,7 +236,10 @@ unknown operator or a bad operator argument, an undefined `${VAR}`.
 Such an `error` counts as a failure for the rule's state, so after
 `fail_after` runs it produces a `fail` event: a broken rule is reported
 through the same channel as a broken service, instead of silently
-disappearing.
+disappearing. The keys of the rule that could be read still apply to that
+event: a rule with a misspelt key and `event_params: false` stays hidden, and
+`remind_every` is honoured. A rule that cannot be checked allows no output
+to be shown, whatever its `event_output` says.
 
 `onecheck validate` prints all errors of both kinds and exits with `2` if
 there are any.
