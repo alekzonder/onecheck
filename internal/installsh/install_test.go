@@ -225,7 +225,7 @@ func TestInstallsBundledModulesOfTheSameVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "1.2.0 module install alekzonder/onecheck file@1.2.0 http@1.2.0 command@1.2.0 --modules-dir " + e.mods
+	want := "1.2.0 module install alekzonder/onecheck file@1.2.0 http@1.2.0 command@1.2.0 disk@1.2.0 --modules-dir " + e.mods
 	if !strings.Contains(string(calls), want) {
 		t.Errorf("modules were not installed.\nwant call: %s\ngot calls:\n%s", want, calls)
 	}
