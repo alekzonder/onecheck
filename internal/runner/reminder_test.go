@@ -313,9 +313,10 @@ func TestFailedSinceSurvivesReminders(t *testing.T) {
 			t.Fatalf("run %d: want a reminder, got %+v", i+1, res[0])
 		}
 	}
-	// Both reminders fall in one second and share an event ID, so one file
-	// is left; it is enough to compare with.
 	reminders := e.byTransition("reminder")
+	if len(reminders) != 2 {
+		t.Fatalf("want two reminders, got %+v", reminders)
+	}
 	e.touch("missing.txt", "x")
 	e.run(rules, Options{})
 	recovered := e.byTransition("recovered")

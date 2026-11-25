@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -170,7 +172,7 @@ func TestWriteEventName(t *testing.T) {
 	s := open(t, cfg)
 	at := time.Date(2026, 11, 23, 10, 2, 0, 0, time.UTC)
 	id := EventID(at, "main", "api-health", state.TransitionFail)
-	if id != "20261123T100200Z-main-api-health-fail" {
+	if !regexp.MustCompile(`^20261123T100200\.000000000Z-[0-9a-f]{8}-main-api-health-fail$`).MatchString(id) {
 		t.Fatalf("id = %q", id)
 	}
 	ev := result.Event{ID: id, Config: "main", Rule: "api-health", Transition: state.TransitionFail,
@@ -240,5 +242,30 @@ func TestPrune(t *testing.T) {
 	}
 	if _, err := s.Lock(); err != nil {
 		t.Errorf("prune must not remove lock/owner files: %v", err)
+	}
+}
+
+func TestEventIDsDiffer(t *testing.T) {
+	at := time.Date(2026, 11, 23, 10, 2, 0, 0, time.UTC)
+	seen := map[string]bool{}
+	for range 100 {
+		id := EventID(at, "main", "api-health", state.TransitionReminder)
+		if seen[id] {
+			t.Fatalf("two events of one rule at the same moment got the same id %q", id)
+		}
+		seen[id] = true
+	}
+}
+
+func TestEventIDsSortByTime(t *testing.T) {
+	at := time.Date(2026, 11, 23, 10, 2, 0, 0, time.UTC)
+	ids := []string{
+		EventID(at, "main", "z", state.TransitionReminder),
+		EventID(at.Add(time.Millisecond), "main", "a", state.TransitionRecovered),
+		EventID(at.Add(time.Second), "main", "a", state.TransitionFail),
+		EventID(at.Add(10*time.Second+5*time.Nanosecond), "main", "a", state.TransitionFail),
+	}
+	if !slices.IsSorted(ids) {
+		t.Errorf("ids must sort in the order of their times: %q", ids)
 	}
 }

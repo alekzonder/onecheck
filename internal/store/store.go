@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -164,9 +166,15 @@ func (s *Store) Prune(keep []string) error {
 	return nil
 }
 
-// EventID builds the id (and file name) of an event.
+// EventID builds the id (and file name) of an event:
+// <UTC time with nanoseconds>-<8 random hex digits>-<config>-<rule>-<transition>.
+// The time has a fixed width, so ids sort in the order of their times; the
+// random part keeps two events of one rule at the same moment from sharing a
+// file.
 func EventID(at time.Time, cfg, rule, transition string) string {
-	return fmt.Sprintf("%s-%s-%s-%s", at.UTC().Format("20060102T150405Z"), cfg, rule, transition)
+	var b [4]byte
+	_, _ = rand.Read(b[:]) // never fails, see crypto/rand.Read
+	return fmt.Sprintf("%s-%s-%s-%s-%s", at.UTC().Format("20060102T150405.000000000Z"), hex.EncodeToString(b[:]), cfg, rule, transition)
 }
 
 func writeJSON(path string, v any) error {

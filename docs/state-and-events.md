@@ -141,14 +141,21 @@ Every change of a rule's confirmed state, and every
 `paths.events`:
 
 ```
-/var/lib/onecheck/events/20261123T100200Z-main-api-health-fail.json
+/var/lib/onecheck/events/20261123T100200.000123456Z-3f9a1c07-main-api-health-fail.json
 ```
 
-The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
+The file name is the event id:
+`<UTC time>-<random>-<config name>-<rule>-<transition>`. The time has
+nanoseconds and a fixed width, so sorting the file names by name puts the
+events in the order they were recorded. The random part, 8 hex digits, keeps
+two events of one rule recorded at the same moment from overwriting each
+other. Read the config, rule and transition from the keys of the event, not
+from the id: a rule name may contain `-`. onecheck before this format wrote
+`<UTC time to the second>-<config name>-<rule>-<transition>`.
 
 ```json
 {
-  "id": "20261123T100200Z-main-api-health-fail",
+  "id": "20261123T100200.000123456Z-3f9a1c07-main-api-health-fail",
   "config": "main",
   "rule": "api-health",
   "transition": "fail",
@@ -221,7 +228,7 @@ out here):
 
 ```json
 {
-  "id": "20261123T112400Z-main-api-health-recovered",
+  "id": "20261123T112400.000098765Z-b41e6d92-main-api-health-recovered",
   "config": "main",
   "rule": "api-health",
   "transition": "recovered",
@@ -249,7 +256,7 @@ back to the start of the problem (`result` is left out here):
 
 ```json
 {
-  "id": "20261123T110215Z-main-api-health-reminder",
+  "id": "20261123T110215.000211307Z-0c7f5a38-main-api-health-reminder",
   "config": "main",
   "rule": "api-health",
   "transition": "reminder",
