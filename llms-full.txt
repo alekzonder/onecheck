@@ -3462,7 +3462,10 @@ The same object is used in JSON output, in result files and inside events.
       "operator": "equals",
       "expected": "ok",
       "actual": "degraded",
-      "message": "body json status: expected equals \"ok\", got \"degraded\""
+      "message": "body json status: expected equals \"ok\", got \"degraded\"",
+      "fields": [
+        { "path": "body", "json_path": "status", "operator": "equals", "actual": "degraded" }
+      ]
     }
   ],
   "error": null,
@@ -3501,6 +3504,53 @@ Each element of `failures`:
 | `expected` | the operator's argument from the config |
 | `actual` | the value found; `null` if the path was missing; long values are cut to about 1 KB |
 | `message` | a ready-to-show sentence combining the above |
+| `fields` | a short list of the concrete fields behind the failure, see [Failed fields](#failed-fields); never empty for a failure onecheck writes |
+
+### Failed fields
+
+`message` is complete but can be long: for `any`, `not` and `some` it shows
+the whole element and the whole condition. `fields` names only the concrete
+leaf fields that decided the failure, with their values, so a notification
+can say briefly what is wrong. Each element:
+
+| Key | Description |
+|---|---|
+| `path` | full path to the field, including the element index, e.g. `containers.#(state=="running")#.2.name` |
+| `json_path` | location inside a parsed JSON document, as in the failure; absent otherwise |
+| `operator` | the operator applied to this field, e.g. `in`, `equals`, `length gt`, `exists` |
+| `actual` | the field's value, cut like `actual` of the failure; `null` if the field is missing |
+| `missing` | `true` when the field is absent; absent otherwise |
+
+What the list holds:
+
+| Failure | `fields` |
+|---|---|
+| a plain operator (`equals`, `in`, `length gt`, `exists`, `json`, `schema`, ...) | the field itself |
+| `every` | one failure per failing element and condition, each with its own field |
+| `any` | the failing fields of all the alternatives |
+| `not` | the fields the negated condition checked and that held; a missing field has `missing: true` |
+| `some` | the failing fields of every element |
+| `every`/`some` on a path that is missing or not an array | the path itself |
+
+A field that repeats (same `path`, `json_path` and `operator`) is listed
+once, and the list stops at 20 entries. For example, this rule
+
+```yaml
+check:
+  containers.#(state=="running")#:
+    every:
+      any:
+        - { path: name, in: ["app-bot-1", "app-postgres-1"] }
+```
+
+writes, for every extra running container, a failure whose `message` shows
+the whole container and whose `fields` names just the one that matters:
+
+```json
+"fields": [
+  { "path": "containers.#(state==\"running\")#.2.name", "operator": "in", "actual": "smoke-tls-proxy" }
+]
+```
 
 ## Saved output
 
@@ -3746,7 +3796,10 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
         "operator": "equals",
         "expected": 200,
         "actual": 503,
-        "message": "status: expected equals 200, got 503"
+        "message": "status: expected equals 200, got 503",
+        "fields": [
+          { "path": "status", "operator": "equals", "actual": 503 }
+        ]
       }
     ],
     "error": null,

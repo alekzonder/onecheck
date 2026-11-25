@@ -181,7 +181,10 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
         "operator": "equals",
         "expected": 200,
         "actual": 503,
-        "message": "status: expected equals 200, got 503"
+        "message": "status: expected equals 200, got 503",
+        "fields": [
+          { "path": "status", "operator": "equals", "actual": 503 }
+        ]
       }
     ],
     "error": null,
