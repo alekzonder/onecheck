@@ -21,6 +21,8 @@ type Failure struct {
 	Expected any    `json:"expected"`
 	Actual   any    `json:"actual"`
 	Message  string `json:"message"`
+	// Fields lists the concrete leaf fields behind the failure.
+	Fields []Field `json:"fields"`
 }
 
 // value is a JSON value looked up by path; exists is false when the path is
@@ -36,6 +38,7 @@ type recorder struct {
 	jsonPath string
 	prefix   string // operator prefix, e.g. "length "
 	out      *[]Failure
+	held     *[]Field // leaves that held; collected only inside "not"
 }
 
 func (r recorder) scratch() recorder {
@@ -51,6 +54,15 @@ func (r recorder) where() string {
 }
 
 func (r recorder) fail(op string, expected any, v value, note string) {
+	r.failFields(op, expected, v, note, nil)
+}
+
+// failFields records a failure whose fields are the given leaves, or the
+// value v itself when there are none.
+func (r recorder) failFields(op string, expected any, v value, note string, fields []Field) {
+	if fields == nil {
+		fields = []Field{r.leafField(op, v)}
+	}
 	got := "nothing (path is missing)"
 	var actual any
 	if v.exists {
@@ -61,13 +73,16 @@ func (r recorder) fail(op string, expected any, v value, note string) {
 	if note != "" {
 		msg += " (" + note + ")"
 	}
-	r.add(Failure{Operator: r.prefix + op, Expected: expected, Actual: actual, Message: msg})
+	r.add(Failure{Operator: r.prefix + op, Expected: expected, Actual: actual, Message: msg, Fields: fields})
 }
 
 func (r recorder) add(f Failure) {
 	f.Path = r.path
 	if f.JSONPath == "" {
 		f.JSONPath = r.jsonPath
+	}
+	if f.Fields == nil {
+		f.Fields = []Field{{Path: r.path, JSONPath: f.JSONPath, Operator: f.Operator, Actual: f.Actual}}
 	}
 	*r.out = append(*r.out, f)
 }
@@ -97,8 +112,10 @@ func (n leaf) eval(r recorder, v value) bool {
 	ok, note := n.fn(v.v)
 	if !ok {
 		r.fail(n.op, n.expected, v, note)
+		return false
 	}
-	return ok
+	r.hold(n.op, v)
+	return true
 }
 
 type existsNode struct{ want bool }
@@ -110,6 +127,7 @@ func (n existsNode) eval(r recorder, v value) bool {
 		r.fail("exists", n.want, v, "")
 		return false
 	}
+	r.hold("exists", v)
 	return true
 }
 
@@ -142,12 +160,15 @@ type anyNode struct {
 func (n anyNode) missingAware() bool { return n.children.missingAware() }
 
 func (n anyNode) eval(r recorder, v value) bool {
+	var fields []Field
 	for _, c := range n.children {
-		if c.eval(r.scratch(), v) {
+		s := r.scratch()
+		if c.eval(s, v) {
 			return true
 		}
+		fields = append(fields, fieldsOf(*s.out)...)
 	}
-	r.fail("any", n.raw, focus(v, n.children), "")
+	r.failFields("any", n.raw, focus(v, n.children), "", merge(fields))
 	return false
 }
 
@@ -214,15 +235,19 @@ func (n notNode) missingAware() bool { return n.inner.missingAware() }
 func (n notNode) eval(r recorder, v value) bool {
 	// A negated condition on an absent path only holds when the condition
 	// itself is about existence; otherwise missing data would pass silently.
-	if (!v.exists && !n.inner.missingAware()) || (v.exists && missingIn(n.inner, v)) {
+	if !v.exists && !n.inner.missingAware() {
 		r.fail("not", n.raw, v, "")
 		return false
 	}
-	if n.inner.eval(r.scratch(), v) {
-		r.fail("not", n.raw, v, "")
-		return false
+	held := []Field{}
+	s := r.scratch()
+	s.held = &held
+	missing := v.exists && missingIn(n.inner, v)
+	if !n.inner.eval(s, v) && !missing {
+		return true
 	}
-	return true
+	r.failFields("not", n.raw, v, "", merge(append(held, fieldsOf(*s.out)...)))
+	return false
 }
 
 // missingIn reports whether a condition looks through "path" at a value
@@ -385,12 +410,15 @@ func (n someNode) eval(r recorder, v value) bool {
 	if !ok {
 		return false
 	}
+	var fields []Field
 	for i, el := range arr {
-		if n.inner.eval(r.child(strconv.Itoa(i)).scratch(), value{v: el, exists: true}) {
+		s := r.child(strconv.Itoa(i)).scratch()
+		if n.inner.eval(s, value{v: el, exists: true}) {
 			return true
 		}
+		fields = append(fields, fieldsOf(*s.out)...)
 	}
-	r.fail("some", n.raw, v, "")
+	r.failFields("some", n.raw, v, "", merge(fields))
 	return false
 }
 

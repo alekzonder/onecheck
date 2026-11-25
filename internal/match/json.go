@@ -43,7 +43,7 @@ func (n jsonNode) eval(r recorder, v value) bool {
 	ok = true
 	data := []byte(text)
 	for _, a := range n.asserts {
-		sub := recorder{path: r.path, jsonPath: a.path, out: r.out}
+		sub := recorder{path: r.path, jsonPath: a.path, out: r.out, held: r.held}
 		if !a.node.eval(sub, lookup(data, a.path)) {
 			ok = false
 		}
