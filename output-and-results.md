@@ -17,13 +17,16 @@ A run reports its outcome in four places:
 |---|---|
 | `0` | every rule that ran passed (also when there were no rules to run) |
 | `1` | at least one rule has status `fail` or `error` |
-| `2` | onecheck could not do its job: no or invalid config, unknown flag, another run of the same config in progress, results or events could not be written, the run was interrupted (SIGINT, SIGTERM) |
+| `2` | onecheck could not do its job: no or invalid config, unknown flag, another run of the same config in progress, results or events could not be written, the run was interrupted (SIGINT, SIGTERM); with a directory of configs, at least one of them could not run |
 
 The exit code follows the status of **this run**, not the confirmed state: a
 rule with `fail_after: 3` that failed once already gives `1`.
 
 With code `2` nothing is printed on stdout; the reason is on stderr, prefixed
-with `onecheck:`.
+with `onecheck:`. The exception is a directory of configs where only some of
+them could not run: the others still run and are printed, and each config
+that could not run is shown as an `ERROR  config:` line (and in `configs` of
+the JSON output), see [Several configs](#several-configs).
 
 An interrupted run (Ctrl-C, `systemctl stop`, shutdown) kills the running
 modules together with everything they started and records nothing: no
@@ -79,6 +82,34 @@ The note in brackets appears when the confirmed state needs explaining:
 | `[state: pass, 1/3]` | the run did not pass, but the state is still `pass`: 1 of `fail_after: 3` |
 | `[state: fail, 1/2]` | the run passed, but the state is still `fail`: 1 of `pass_after: 2` |
 
+## Several configs
+
+With a directory of configs (`-c <dir>`, or plain `onecheck` with configs in
+`/etc/onecheck/`, see
+[Configuration](/configuration#several-configs-a-directory)), the rules are
+grouped under a header per config, `== <name>  <file>`, and one summary
+covers all of them:
+
+```
+== main  /etc/onecheck/main.yaml
+PASS   passwd-sane   (file, 2ms)
+
+== web  /etc/onecheck/web.yaml
+FAIL   api-health    (http, 124ms)  [transition: fail]
+       body json status: expected equals "ok", got "degraded"
+
+== /etc/onecheck/broken.yaml
+ERROR  config: /etc/onecheck/broken.yaml: "name" is required: it separates the results, state and logs of different configs
+
+2 rules: 1 passed, 1 failed, 0 errors; 1 of 3 configs could not run
+```
+
+- A config that could not be loaded or run has no name in its header and an
+  `ERROR  config:` line with the reason; the exit code is then `2`.
+- With `--only-failed` a config whose rules all passed is left out entirely.
+- With a single config file (`-c <file>`) there are no headers: the output is
+  the one shown above.
+
 ## JSON output
 
 ```sh
@@ -89,14 +120,19 @@ onecheck -o json --only-failed
 ```json
 {
   "summary": { "total": 4, "passed": 1, "failed": 2, "errors": 1 },
+  "configs": [
+    { "name": "main", "path": "/etc/onecheck/config.yaml" }
+  ],
   "results": [
     { "config": "main", "rule": "passwd-sane", "status": "pass", "...": "..." }
   ]
 }
 ```
 
-`summary` always counts every rule that ran. `results` lists them in config
-order; with `--only-failed` it contains only the non-passing ones (possibly
+`summary` always counts every rule that ran. `configs` lists every config
+that was run, with `name` and `path`; a config that could not run has an
+`error` (and an empty `name` if it could not be loaded) and no results.
+`results` lists the rules in config order, config after config; with `--only-failed` it contains only the non-passing ones (possibly
 `[]`). Each element has the [result format](#result-format) below.
 
 ```sh

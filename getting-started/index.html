@@ -104,13 +104,18 @@ taken from <code>paths.modules</code>.</p>
 <p>Or build everything from source: <code>make build</code> puts the binary into
 <code>dist/onecheck</code> and the modules into <code>dist/modules/</code>.</p>
 <h2 id="first-config"><a class="blume-heading-anchor" href="#first-config">First config</a></h2>
-<p>onecheck looks for its config in this order:</p>
+<p>onecheck looks for its configs in this order:</p>
 <ol>
-<li><code>--config &lt;path&gt;</code> (<code>-c</code>)</li>
-<li><code>$ONECHECK_CONFIG</code></li>
-<li><code>/etc/onecheck/config.yaml</code></li>
-<li><code>$HOME/.config/onecheck/config.yaml</code></li>
+<li><code>--config &lt;file or directory&gt;</code> (<code>-c</code>)</li>
+<li><code>$ONECHECK_CONFIG</code>, a file or a directory</li>
+<li><code>/etc/onecheck/</code>, if it holds a config file</li>
+<li><code>$HOME/.config/onecheck/</code>, if it holds a config file</li>
 </ol>
+<p>In a directory, every <code>*.yaml</code> and <code>*.yml</code> file directly in it is a config,
+and plain <code>onecheck</code> runs them all: one command shows the state of everything
+configured on the host. Put the first config into
+<code>/etc/onecheck/config.yaml</code> (or <code>~/.config/onecheck/config.yaml</code>); see
+<a href="/onecheck/configuration#several-configs-a-directory">Several configs: a directory</a>.</p>
 <p>A minimal config needs a name and some rules:</p>
 <pre class="astro-code astro-code-themes github-light github-dark" style="--shiki-light:#24292e;--shiki-dark:#e1e4e8;--shiki-light-bg:#fff;--shiki-dark-bg:#24292e; overflow-x: auto;" tabindex="0" data-language="yaml" data-icon=""><svg aria-hidden="true" class="blume-lang-icon" fill="currentColor" height="14" viewBox="0 0 24 24" width="14"><path d="m0 .97 4.111 6.453v4.09h2.638v-4.09L11.053.969H8.214L5.58 5.125 2.965.969Zm12.093.024-4.47 10.544h2.114l.97-2.345h4.775l.804 2.345h2.26L14.255.994Zm1.133 2.225 1.463 3.87h-3.096zm3.06 9.475v10.29H24v-2.199h-5.454v-8.091zm-12.175.002v10.335h2.217v-7.129l2.32 4.792h1.746l2.4-4.96v7.295h2.127V12.696h-2.904L9.44 17.37l-2.455-4.674Z"></path></svg><code><span class="line"><span style="--shiki-light:#22863A;--shiki-dark:#85E89D">name</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">: </span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF">main</span></span>
 <span class="line"></span>
@@ -174,7 +179,8 @@ when onecheck could not run at all. Details: <a href="/onecheck/output-and-resul
 <span class="line"><span style="--shiki-light:#D73A49;--shiki-dark:#F97583">WantedBy</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">=timers.target</span></span></code></pre>
 <h3 id="checks-at-different-intervals"><a class="blume-heading-anchor" href="#checks-at-different-intervals">Checks at different intervals</a></h3>
 <p>Use one config per interval, each with its own <code>name</code>, and one schedule line
-per config:</p>
+per config. Keep them in <code>/etc/onecheck/</code>: then a plain <code>onecheck</code> still runs
+all of them at once, to see the whole host.</p>
 <pre class="astro-code astro-code-themes github-light github-dark" style="--shiki-light:#24292e;--shiki-dark:#e1e4e8;--shiki-light-bg:#fff;--shiki-dark-bg:#24292e; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>* * * * *    root  onecheck -c /etc/onecheck/fast.yaml --only-failed &gt;/dev/null</span></span>
 <span class="line"><span>*/15 * * * * root  onecheck -c /etc/onecheck/slow.yaml --only-failed &gt;/dev/null</span></span></code></pre>
 <p>Configs with different names never block each other: results, state, logs and

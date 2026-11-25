@@ -39,7 +39,7 @@ onecheck --log-level debug --rule api-health
 
 ```
 time=2026-11-23T10:00:00.123Z level=INFO msg="check failed" rule=api-health module=http status=fail state=pass duration_ms=124 failures="[status: expected equals 200, got 503]"
-time=2026-11-23T10:00:00.130Z level=INFO msg="state changed" rule=api-health transition=fail event=20261123T100000Z-main-api-health-fail
+time=2026-11-23T10:00:00.130Z level=INFO msg="state changed" rule=api-health transition=fail event=20261123T100000.130412871Z-5d2e81fa-main-api-health-fail
 time=2026-11-23T10:00:00.131Z level=INFO msg="run finished" total=12 passed=11 failed=1 errors=0
 ```
 

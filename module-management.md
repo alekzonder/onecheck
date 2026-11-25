@@ -11,8 +11,11 @@ Modules are distributed through GitHub Releases. The `onecheck module`
 commands download, verify and install them; you can also copy a module file
 into the directory by hand.
 
-All commands take the modules directory from the config. Without a config,
-pass `--modules-dir <dir>`.
+All commands take the modules directory from the config. With a
+[directory of configs](/configuration#several-configs-a-directory) they use
+the `paths.modules` the configs share and the repositories of all of them; if
+the configs name different modules directories, pass `--modules-dir <dir>`.
+Without a config, pass `--modules-dir <dir>`.
 
 ## List
 

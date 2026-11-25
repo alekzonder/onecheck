@@ -84,12 +84,18 @@ Or build everything from source: `make build` puts the binary into
 
 ## First config
 
-onecheck looks for its config in this order:
+onecheck looks for its configs in this order:
 
-1. `--config <path>` (`-c`)
-2. `$ONECHECK_CONFIG`
-3. `/etc/onecheck/config.yaml`
-4. `$HOME/.config/onecheck/config.yaml`
+1. `--config <file or directory>` (`-c`)
+2. `$ONECHECK_CONFIG`, a file or a directory
+3. `/etc/onecheck/`, if it holds a config file
+4. `$HOME/.config/onecheck/`, if it holds a config file
+
+In a directory, every `*.yaml` and `*.yml` file directly in it is a config,
+and plain `onecheck` runs them all: one command shows the state of everything
+configured on the host. Put the first config into
+`/etc/onecheck/config.yaml` (or `~/.config/onecheck/config.yaml`); see
+[Several configs: a directory](/configuration#several-configs-a-directory).
 
 A minimal config needs a name and some rules:
 
@@ -177,7 +183,8 @@ WantedBy=timers.target
 ### Checks at different intervals
 
 Use one config per interval, each with its own `name`, and one schedule line
-per config:
+per config. Keep them in `/etc/onecheck/`: then a plain `onecheck` still runs
+all of them at once, to see the whole host.
 
 ```cron
 * * * * *    root  onecheck -c /etc/onecheck/fast.yaml --only-failed >/dev/null

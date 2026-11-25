@@ -9,8 +9,11 @@ from the moment its file is there, and gone when the file is removed.</p>
 <p>Modules are distributed through GitHub Releases. The <code>onecheck module</code>
 commands download, verify and install them; you can also copy a module file
 into the directory by hand.</p>
-<p>All commands take the modules directory from the config. Without a config,
-pass <code>--modules-dir &lt;dir&gt;</code>.</p>
+<p>All commands take the modules directory from the config. With a
+<a href="/onecheck/configuration#several-configs-a-directory">directory of configs</a> they use
+the <code>paths.modules</code> the configs share and the repositories of all of them; if
+the configs name different modules directories, pass <code>--modules-dir &lt;dir&gt;</code>.
+Without a config, pass <code>--modules-dir &lt;dir&gt;</code>.</p>
 <h2 id="list"><a class="blume-heading-anchor" href="#list">List</a></h2>
 <pre class="astro-code astro-code-themes github-light github-dark" style="--shiki-light:#24292e;--shiki-dark:#e1e4e8;--shiki-light-bg:#fff;--shiki-dark-bg:#24292e; overflow-x: auto;" tabindex="0" data-language="console"><code><span class="line"><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8">$ onecheck module list</span></span>
 <span class="line"><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF">modules in /usr/lib/onecheck/modules:</span></span>
