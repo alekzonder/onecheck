@@ -208,12 +208,39 @@ The file name is the event id: `<UTC time>-<config name>-<rule>-<transition>`.
 | `at` | when the event was recorded (UTC, RFC 3339) |
 | `expires_at` | `at` + `events.ttl`; after this the event may be deleted |
 | `since` | when the state in `to` began: equal to `at` for `fail` and `recovered`, the time of the `fail` event for a reminder |
+| `failed_since` | only in a `recovered` event: when the failure that ended began, that is the `at` of its `fail` event; `at` − `failed_since` is how long the rule was failing. Written also with `event_params: false`: it is a time, not a detail of the check |
 | `params` | the rule's `params` exactly as written in the config, before `${VAR}` is replaced; `null` when the rule has none or has `event_params: false` |
 | `redacted` | `true` when the rule has `event_params: false`: a consumer must not show the details of this event (params, failures, error) to third parties |
 | `output_fields` | names of the keys of `result.output` the rule allows a notification to show, from the rule's [`event_output`](#output-in-notifications); `[]` unless the rule says otherwise, and always `[]` with `event_params: false` |
 | `result` | the full result of the run that wrote the event, see [Output and results](/output-and-results#result-format) |
 
 For a `recovered` event, `result` is the passing run (`failures` is empty).
+`since` of a `recovered` event is still equal to `at`, the start of the new
+`pass` state; the start of the failure is in `failed_since` (`result` is left
+out here):
+
+```json
+{
+  "id": "20261123T112400Z-main-api-health-recovered",
+  "config": "main",
+  "rule": "api-health",
+  "transition": "recovered",
+  "from": "fail",
+  "to": "pass",
+  "at": "2026-11-23T11:24:00Z",
+  "expires_at": "2026-11-24T11:24:00Z",
+  "since": "2026-11-23T11:24:00Z",
+  "failed_since": "2026-11-23T10:02:00Z",
+  "params": { "url": "https://example.com/health" },
+  "redacted": false,
+  "output_fields": [],
+  "result": { "status": "pass", "state": "pass", "transition": "recovered", "consecutive": 2 }
+}
+```
+
+Reminders do not move `failed_since`: it is the time of the `fail` event, not
+of the last reminder. A `recovered` event written by a onecheck older than
+this key has no `failed_since`; a consumer should then leave the duration out.
 For a `fail` event caused by a check that could not run, `result.status` is
 `error` and `result.error` holds the reason.
 
