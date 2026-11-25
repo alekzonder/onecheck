@@ -1,4 +1,6 @@
-# Checks
+---
+title: Checks
+---
 
 The `check` block of a rule says what must be true about the values a module
 returned. It is evaluated by onecheck itself, by one engine, so everything on

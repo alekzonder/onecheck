@@ -1,4 +1,6 @@
-# Configuration
+---
+title: Configuration
+---
 
 The config is YAML. Unknown keys are errors, so a typo never goes unnoticed.
 Check a config without running it: `onecheck validate -c <file>`.

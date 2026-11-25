@@ -1,4 +1,6 @@
-# Logging and logrotate
+---
+title: Logging and logrotate
+---
 
 ## Log file
 

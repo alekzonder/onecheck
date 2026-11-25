@@ -89,8 +89,6 @@ flag. The source is on [GitHub](https://github.com/alekzonder/onecheck).
 # Checks
 Source: https://alekzonder.github.io/onecheck/checks
 
-# Checks
-
 The `check` block of a rule says what must be true about the values a module
 returned. It is evaluated by onecheck itself, by one engine, so everything on
 this page works the same for every module: bundled or third-party.
@@ -608,8 +606,6 @@ check:
 # Configuration
 Source: https://alekzonder.github.io/onecheck/configuration
 
-# Configuration
-
 The config is YAML. Unknown keys are errors, so a typo never goes unnoticed.
 Check a config without running it: `onecheck validate -c <file>`.
 
@@ -859,8 +855,6 @@ there are any.
 # Development
 Source: https://alekzonder.github.io/onecheck/development
 
-# Development
-
 Rules for contributors (commit messages, merges, limits) are in
 [AGENTS.md](https://github.com/alekzonder/onecheck/blob/main/AGENTS.md). This page is about how to build, test and release.
 
@@ -1063,6 +1057,20 @@ would break on the site. `scripts/docs-check-links.sh` fails the build when one
 appears. Links from outside the site (README, CLI messages) use the full URL
 `https://alekzonder.github.io/onecheck/<route>`.
 
+**A page's title goes in the front matter, never in a `# ` heading:**
+
+```markdown
+---
+title: Getting started
+---
+
+## Install
+```
+
+Blume renders the title above the page itself, so a `# Getting started`
+line would show it a second time. Sections start at `##`. The same script
+fails the build on a `# ` line outside code blocks.
+
 Preview locally with `cd docs && npm ci && npm run dev`.
 `make docs-build` runs the link check, `blume doctor` and `blume build`; CI
 runs it on every push and pull request (`.github/workflows/check.yml`).
@@ -1076,8 +1084,6 @@ site always shows the latest release.
 
 # Getting started
 Source: https://alekzonder.github.io/onecheck/getting-started
-
-# Getting started
 
 ## Install
 
@@ -1286,8 +1292,6 @@ For other users everything lives under `$HOME/.local/state/onecheck/` and
 # Logging and logrotate
 Source: https://alekzonder.github.io/onecheck/logging-and-logrotate
 
-# Logging and logrotate
-
 ## Log file
 
 Every run appends to
@@ -1420,8 +1424,6 @@ files left by an interrupted write, are removed once they are older than
 
 # Module management
 Source: https://alekzonder.github.io/onecheck/module-management
-
-# Module management
 
 A module is an executable file named `onecheck-<name>` in the modules
 directory (`paths.modules`). onecheck reads that directory on every run:
@@ -1600,8 +1602,6 @@ modules:
 
 # Module protocol
 Source: https://alekzonder.github.io/onecheck/module-protocol
-
-# Module protocol
 
 This page is for people writing a module. A module teaches onecheck a new
 kind of check: Postgres, Redis, DNS, a message queue, anything.
@@ -3314,8 +3314,6 @@ FAIL   backup   (systemd, 12ms)
 # Output and results
 Source: https://alekzonder.github.io/onecheck/output-and-results
 
-# Output and results
-
 A run reports its outcome in four places:
 
 | Where | What | For |
@@ -3612,8 +3610,6 @@ stored.
 
 # State and events
 Source: https://alekzonder.github.io/onecheck/state-and-events
-
-# State and events
 
 onecheck does not only tell whether a check passes right now. For every rule
 it keeps a **confirmed state** between runs and records each change of that

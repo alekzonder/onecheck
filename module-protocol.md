@@ -1,4 +1,6 @@
-# Module protocol
+---
+title: Module protocol
+---
 
 This page is for people writing a module. A module teaches onecheck a new
 kind of check: Postgres, Redis, DNS, a message queue, anything.
