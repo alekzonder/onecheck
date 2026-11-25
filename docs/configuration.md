@@ -3,7 +3,9 @@ title: Configuration
 ---
 
 The config is YAML. Unknown keys are errors, so a typo never goes unnoticed.
-Check a config without running it: `onecheck validate -c <file>`.
+Check a config without running it: `onecheck validate -c <file>`. A
+directory of configs works too, see
+[Several configs](#several-configs-a-directory).
 
 ## Full reference
 
@@ -150,6 +152,11 @@ works with rules that are broken. If the config file is found but cannot be
 loaded, its path is still printed, followed by the error, and the exit code
 is `2`.
 
+For a directory of configs it prints this block for every config, separated
+by blank lines, and the `binary` line once at the end. A config that cannot
+be loaded shows only its `config` line, the error goes to stderr and the exit
+code is `2` after everything is printed.
+
 `onecheck paths --json` prints the same for scripts:
 
 ```json
@@ -167,6 +174,51 @@ is `2`.
   "binary": { "path": "/usr/local/lib/onecheck/versions/0.1.2/onecheck", "exists": true }
 }
 ```
+
+For a directory of configs the JSON is
+`{ "configs": [ ... ], "binary": { ... } }`, where each element of `configs`
+is the object above without `binary`.
+
+## Several configs: a directory
+
+`--config` and `ONECHECK_CONFIG` take a file or a directory. Without both,
+onecheck uses the first of these directories that holds a config file:
+
+1. `/etc/onecheck/`
+2. `$HOME/.config/onecheck/`
+
+```
+/etc/onecheck/
+├── config.yaml       # a config  (name: main)
+├── backup.yaml       # a config  (name: backup)
+├── web.yml           # a config  (name: web)
+└── conf.d/           # not read directly: include files of config.yaml
+    └── api.yaml
+```
+
+- A config file is a regular file (or a symlink to one) directly in the
+  directory, named `*.yaml` or `*.yml` and not starting with `.`.
+  Subdirectories are not entered, so `conf.d/` with
+  [include files](#includes-confd) stays as it is. An include file put
+  directly into the directory is taken for a config and fails, because it has
+  no `name`.
+- The configs run one after another in file name order, each exactly as
+  `onecheck -c <file>` would run it: with its own lock, log, `run.parallel`,
+  state and results. The output combines them, see
+  [Output and results](/output-and-results#several-configs).
+- A config that cannot be loaded, or whose run fails (for example, another
+  run of it is still in progress), is reported with the reason, and the other
+  configs still run. The exit code is then `2`.
+- Two configs with the same `name` would share their state, results and log,
+  so both are reported as errors and neither runs.
+- `--rule` and `--tag` apply to every config. Each `--rule` must name a rule
+  of at least one config; a config that has none of the named rules and no
+  rule with one of the tags is skipped.
+- A directory given with `--config` or `ONECHECK_CONFIG` that holds no config
+  file is an error.
+- `validate`, `paths` and `logrotate` take the directory too and handle every
+  config in it. `onecheck module` uses the configs' `paths.modules`; if the
+  configs name different directories, pass `--modules-dir`.
 
 ## Includes (`conf.d/`)
 
@@ -224,7 +276,8 @@ The level comes from, in order: `--log-level`, `log.level`, `info`.
 ## Two kinds of config errors
 
 **Errors of the whole config** stop onecheck with exit code `2` before any
-check runs: unreadable or invalid YAML, an unknown top-level key, a missing or
+check of that config runs (the other configs of a
+[directory](#several-configs-a-directory) still run): unreadable or invalid YAML, an unknown top-level key, a missing or
 invalid `name`, a rule without a name, a duplicate rule name, an include file
 with keys other than `rules`.
 

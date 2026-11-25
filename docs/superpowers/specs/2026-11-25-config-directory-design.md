@@ -180,6 +180,13 @@ expired events are removed once per distinct `paths.events` directory, with
 the TTL of the first config using it. A broken config is reported on stderr
 and the command exits 2 after doing the rest.
 
+### `module` (decided during implementation)
+
+`onecheck module ...` takes the modules directory from the configs. In
+directory mode it uses the `paths.modules` the loaded configs share and
+merges their `modules.repos`; if they name different directories and no
+`--modules-dir` is given, it fails asking for `--modules-dir`.
+
 ### Docs
 
 - `docs/configuration.md`: new section "Several configs: a directory"
