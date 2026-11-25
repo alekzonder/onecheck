@@ -27,7 +27,11 @@ A path that does not exist yet is marked "(missing)"; onecheck creates the
 log, state, results and events paths on the first run. Nothing is created or
 changed by this command, and modules do not have to be installed.
 
-If the config is found but cannot be loaded, its path is still printed and
+With a directory of configs (--config <dir>, or no --config at all) a block
+is printed for every config in it, then the binary once; --json prints
+{"configs": [...], "binary": {...}}.
+
+If a config is found but cannot be loaded, its path is still printed and
 the command exits with 2.`
 
 // pathEntry is one path in the JSON output of "onecheck paths".
@@ -47,7 +51,7 @@ type pathsReport struct {
 	Results  *pathEntry  `json:"results,omitempty"`
 	Events   *pathEntry  `json:"events,omitempty"`
 	Modules  *pathEntry  `json:"modules,omitempty"`
-	Binary   pathEntry   `json:"binary"`
+	Binary   *pathEntry  `json:"binary,omitempty"`
 }
 
 func entry(path string) pathEntry {
@@ -89,39 +93,92 @@ func (a *app) pathsCmd() *cobra.Command {
 }
 
 func (a *app) paths(asJSON bool) error {
-	path, source, err := config.Locate(a.configPath)
+	target, err := config.Discover(a.configPath)
 	if err != nil {
 		return err
 	}
+	reports := make([]pathsReport, len(target.Files))
+	var loadErrs []error
+	for i, file := range target.Files {
+		var loadErr error
+		reports[i], loadErr = configPaths(file, target.Source)
+		if loadErr != nil {
+			loadErrs = append(loadErrs, loadErr)
+		}
+	}
+	binary := entry(binaryPath())
+	if !target.Dir {
+		reports[0].Binary = &binary
+		if err := a.writePaths(asJSON, reports[0]); err != nil {
+			return err
+		}
+		if len(loadErrs) > 0 {
+			return loadErrs[0]
+		}
+		return nil
+	}
+	if err := a.writeDirPaths(asJSON, reports, binary); err != nil {
+		return err
+	}
+	for _, e := range loadErrs {
+		fmt.Fprintf(a.stderr, "onecheck: %v\n", e)
+	}
+	if len(loadErrs) > 0 {
+		return fmt.Errorf("%d of %d configs in %s could not be loaded", len(loadErrs), len(reports), target.Path)
+	}
+	return nil
+}
+
+// configPaths is the report of one config file. A config that cannot be
+// loaded still reports its own path.
+func configPaths(path, source string) (pathsReport, error) {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	report := pathsReport{Config: entry(path), Includes: []pathEntry{}, Binary: entry(binaryPath())}
+	report := pathsReport{Config: entry(path), Includes: []pathEntry{}}
 	report.Config.Source = source
-
-	cfg, loadErr := config.Load(path)
-	if loadErr == nil {
-		report.Name = cfg.Name
-		for _, inc := range cfg.Includes {
-			report.Includes = append(report.Includes, entry(inc))
-		}
-		report.Log = entryPtr(cfg.LogFile())
-		report.State = entryPtr(cfg.StateDir())
-		report.Results = entryPtr(cfg.ResultsDir())
-		report.Events = entryPtr(cfg.EventsDir())
-		report.Modules = entryPtr(cfg.Paths.Modules)
+	cfg, err := config.Load(path)
+	if err != nil {
+		return report, err
 	}
+	report.Name = cfg.Name
+	for _, inc := range cfg.Includes {
+		report.Includes = append(report.Includes, entry(inc))
+	}
+	report.Log = entryPtr(cfg.LogFile())
+	report.State = entryPtr(cfg.StateDir())
+	report.Results = entryPtr(cfg.ResultsDir())
+	report.Events = entryPtr(cfg.EventsDir())
+	report.Modules = entryPtr(cfg.Paths.Modules)
+	return report, nil
+}
 
+func (a *app) writePaths(asJSON bool, report pathsReport) error {
 	if asJSON {
 		enc := json.NewEncoder(a.stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(report); err != nil {
-			return err
-		}
-		return loadErr
+		return enc.Encode(report)
 	}
 	a.printPaths(report)
-	return loadErr
+	return nil
+}
+
+// writeDirPaths prints one block per config and the binary once.
+func (a *app) writeDirPaths(asJSON bool, reports []pathsReport, binary pathEntry) error {
+	if asJSON {
+		enc := json.NewEncoder(a.stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Configs []pathsReport `json:"configs"`
+			Binary  pathEntry     `json:"binary"`
+		}{reports, binary})
+	}
+	for _, r := range reports {
+		a.printPaths(r)
+		fmt.Fprintln(a.stdout)
+	}
+	a.printPaths(pathsReport{Binary: &binary})
+	return nil
 }
 
 func (a *app) printPaths(r pathsReport) {
@@ -138,7 +195,9 @@ func (a *app) printPaths(r pathsReport) {
 		}
 		fmt.Fprintf(a.stdout, "%-9s %s%s\n", label, e.Path, note)
 	}
-	row("config", &r.Config)
+	if r.Config.Path != "" {
+		row("config", &r.Config)
+	}
 	if r.Name != "" {
 		fmt.Fprintf(a.stdout, "%-9s %s\n", "name", r.Name)
 	}
@@ -150,5 +209,5 @@ func (a *app) printPaths(r pathsReport) {
 	row("results", r.Results)
 	row("events", r.Events)
 	row("modules", r.Modules)
-	row("binary", &r.Binary)
+	row("binary", r.Binary)
 }

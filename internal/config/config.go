@@ -6,10 +6,21 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
-const systemConfig = "/etc/onecheck/config.yaml"
+// systemDir is the default config directory for the whole host.
+var systemDir = "/etc/onecheck"
+
+// SetSystemDir replaces the host config directory and returns a function
+// that restores it. Tests use it so that the machine's own configs never
+// leak into them.
+func SetSystemDir(dir string) (restore func()) {
+	old := systemDir
+	systemDir = dir
+	return func() { systemDir = old }
+}
 
 // NameRE is the pattern for config and rule names. Names become file names.
 var NameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
@@ -26,47 +37,85 @@ func (c *Config) EventsDir() string { return c.Paths.Events }
 // LogFile is this config's log file.
 func (c *Config) LogFile() string { return filepath.Join(c.Log.Dir, c.Name, "onecheck.log") }
 
-// Where a config file was found, as reported by Locate.
+// Where the configs were found, as reported in Target.Source.
 const (
 	SourceFlag    = "--config"
 	SourceEnv     = "ONECHECK_CONFIG"
 	SourceDefault = "default location"
 )
 
-// Find returns the config file to use: the explicit path, $ONECHECK_CONFIG,
-// /etc/onecheck/config.yaml, then $HOME/.config/onecheck/config.yaml.
-func Find(flag string) (string, error) {
-	path, _, err := Locate(flag)
-	return path, err
+// Target is what onecheck was pointed at: one config file or a directory of
+// config files.
+type Target struct {
+	Path   string   // the file or directory that was given or found
+	Source string   // SourceFlag, SourceEnv or SourceDefault
+	Dir    bool     // Path is a directory
+	Files  []string // the config files to load, in order
 }
 
-// Locate is Find that also says where the config came from: SourceFlag,
-// SourceEnv or SourceDefault.
-func Locate(flag string) (path, source string, err error) {
-	path, source = flag, SourceFlag
+// Discover finds the configs to use. The path comes from --config, then
+// $ONECHECK_CONFIG; it may be a file or a directory. Without both, the first
+// of /etc/onecheck and $HOME/.config/onecheck that holds a config file is
+// used.
+func Discover(flag string) (*Target, error) {
+	path, source := flag, SourceFlag
 	if path == "" {
 		path, source = os.Getenv("ONECHECK_CONFIG"), SourceEnv
 	}
 	if path != "" {
-		if _, err := os.Stat(path); err != nil {
-			return "", "", fmt.Errorf("config file %s: %w", path, err)
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("config file %s: %w", path, err)
 		}
-		return path, source, nil
+		if !info.IsDir() {
+			return &Target{Path: path, Source: source, Files: []string{path}}, nil
+		}
+		files, err := ConfigFiles(path)
+		if err != nil {
+			return nil, err
+		}
+		if len(files) == 0 {
+			return nil, fmt.Errorf("no config files (*.yaml, *.yml) in %s", path)
+		}
+		return &Target{Path: path, Source: source, Dir: true, Files: files}, nil
 	}
-	candidates := []string{systemConfig}
+	candidates := []string{systemDir}
 	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", "onecheck", "config.yaml"))
+		candidates = append(candidates, filepath.Join(home, ".config", "onecheck"))
 	}
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path, SourceDefault, nil
+	for _, dir := range candidates {
+		if files, err := ConfigFiles(dir); err == nil && len(files) > 0 {
+			return &Target{Path: dir, Source: SourceDefault, Dir: true, Files: files}, nil
 		}
 	}
-	msg := "no config file found; looked in:"
-	for _, path := range candidates {
-		msg += "\n  " + path
+	msg := "no config files (*.yaml, *.yml) found; looked in:"
+	for _, dir := range candidates {
+		msg += "\n  " + dir
 	}
-	return "", "", fmt.Errorf("%s\nuse --config <path> or set ONECHECK_CONFIG", msg)
+	return nil, fmt.Errorf("%s\nuse --config <file or directory> or set ONECHECK_CONFIG", msg)
+}
+
+// ConfigFiles lists the config files of a directory: regular files (symlinks
+// followed) named *.yaml or *.yml and not starting with ".", sorted by name.
+// Subdirectories are not entered.
+func ConfigFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("config directory %s: %w", dir, err)
+	}
+	var files []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || (!strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml")) {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		files = append(files, path)
+	}
+	return files, nil
 }
 
 // defaultConfig returns a config with every default applied. Root gets

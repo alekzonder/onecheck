@@ -29,21 +29,30 @@ pass to fail or recovers.
 
 Running "onecheck" without a command is the same as "onecheck run".
 
-Config file, first match wins:
-  1. --config <path>
-  2. $ONECHECK_CONFIG
-  3. /etc/onecheck/config.yaml
-  4. $HOME/.config/onecheck/config.yaml
+Config, first match wins:
+  1. --config <file or directory>
+  2. $ONECHECK_CONFIG (a file or a directory)
+  3. /etc/onecheck/            if it holds a config file
+  4. $HOME/.config/onecheck/   if it holds a config file
+
+With a directory, every *.yaml and *.yml file directly in it (subdirectories
+such as conf.d/ are not read) is a config, and they run one after another as
+separate runs would; the output combines them. So plain "onecheck" shows the
+state of everything configured on the host.
 
 Exit codes:
   0  every rule passed
   1  at least one rule failed or could not be checked
-  2  onecheck could not run (bad config, a run already in progress, ...)
+  2  onecheck could not run (bad config, a run already in progress, ...),
+     or one config of a directory could not run
 
 Documentation: https://github.com/alekzonder/onecheck/tree/main/docs`
 
-const rootExample = `  # run every rule of the default config
+const rootExample = `  # run every config of /etc/onecheck (or ~/.config/onecheck)
   onecheck
+
+  # run every config of another directory
+  onecheck -c ./configs
 
   # use a specific config and print only what is wrong, as JSON
   onecheck -c /etc/onecheck/web.yaml --only-failed -o json
@@ -103,7 +112,7 @@ func (a *app) rootCmd() *cobra.Command {
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return fmt.Errorf("%w\nSee '%s --help'", err, cmd.CommandPath())
 	})
-	root.PersistentFlags().StringVarP(&a.configPath, "config", "c", "", "path to the config file (default: see above)")
+	root.PersistentFlags().StringVarP(&a.configPath, "config", "c", "", "config file or directory of configs (default: see above)")
 	root.PersistentFlags().StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn or error; overrides the config and also prints the log on stderr")
 	addRunFlags(root, run)
 

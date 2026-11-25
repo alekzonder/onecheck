@@ -274,45 +274,6 @@ func TestEnvUndefinedIsRuleError(t *testing.T) {
 	}
 }
 
-func TestFindOrder(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("ONECHECK_CONFIG", "")
-	homeCfg := write(t, home, ".config/onecheck/config.yaml", "name: home\n")
-	envCfg := write(t, t.TempDir(), "env.yaml", "name: env\n")
-	flagCfg := write(t, t.TempDir(), "flag.yaml", "name: flag\n")
-
-	if _, err := os.Stat(systemConfig); err == nil {
-		t.Skip("a system config exists on this machine")
-	}
-	got, err := Find("")
-	if err != nil || got != homeCfg {
-		t.Errorf("Find() = %q, %v; want home config", got, err)
-	}
-	t.Setenv("ONECHECK_CONFIG", envCfg)
-	if got, _ := Find(""); got != envCfg {
-		t.Errorf("Find() = %q; want env config", got)
-	}
-	if got, _ := Find(flagCfg); got != flagCfg {
-		t.Errorf("Find(flag) = %q; want flag config", got)
-	}
-}
-
-func TestFindNotFound(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("ONECHECK_CONFIG", "")
-	if _, err := os.Stat(systemConfig); err == nil {
-		t.Skip("a system config exists on this machine")
-	}
-	_, err := Find("")
-	if err == nil || !strings.Contains(err.Error(), systemConfig) || !strings.Contains(err.Error(), ".config/onecheck/config.yaml") {
-		t.Errorf("error must list the paths tried, got %v", err)
-	}
-	if _, err := Find("/nonexistent/x.yaml"); err == nil {
-		t.Error("explicit missing path must be an error")
-	}
-}
-
 func TestYAMLAnchorsAcrossRules(t *testing.T) {
 	content := `
 name: main
@@ -370,28 +331,6 @@ func TestOutputTail(t *testing.T) {
 	r := load("", "    output_tail: 0\n").Rules[0]
 	if r.Err != nil || r.OutputTail != 0 {
 		t.Errorf("output_tail 0 must switch saving off: %d, %v", r.OutputTail, r.Err)
-	}
-}
-
-func TestLocateReportsTheSource(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("ONECHECK_CONFIG", "")
-	homeCfg := write(t, home, ".config/onecheck/config.yaml", "name: home\n")
-	envCfg := write(t, t.TempDir(), "env.yaml", "name: env\n")
-	flagCfg := write(t, t.TempDir(), "flag.yaml", "name: flag\n")
-
-	if _, err := os.Stat(systemConfig); err != nil {
-		if got, src, err := Locate(""); err != nil || got != homeCfg || src != SourceDefault {
-			t.Errorf("Locate() = %q, %q, %v; want home config from the default location", got, src, err)
-		}
-	}
-	t.Setenv("ONECHECK_CONFIG", envCfg)
-	if got, src, _ := Locate(""); got != envCfg || src != SourceEnv {
-		t.Errorf("Locate() = %q, %q; want env config", got, src)
-	}
-	if got, src, _ := Locate(flagCfg); got != flagCfg || src != SourceFlag {
-		t.Errorf("Locate(flag) = %q, %q; want flag config", got, src)
 	}
 }
 
@@ -654,5 +593,85 @@ rules:
 	}
 	if got := strings.Join(cfg.Rules[0].EventOutput, ","); got != "stderr,stdout" {
 		t.Errorf("event_output = %s", got)
+	}
+}
+
+// isolateDefaults points the default config directories at empty temp dirs.
+func isolateDefaults(t *testing.T) (system, home string) {
+	t.Helper()
+	system, home = t.TempDir(), t.TempDir()
+	t.Cleanup(SetSystemDir(system))
+	t.Setenv("HOME", home)
+	t.Setenv("ONECHECK_CONFIG", "")
+	return system, home
+}
+
+func TestDiscoverFile(t *testing.T) {
+	isolateDefaults(t)
+	f := write(t, t.TempDir(), "x.yaml", "name: x\n")
+	got, err := Discover(f)
+	if err != nil || got.Dir || got.Source != SourceFlag || got.Path != f || strings.Join(got.Files, ",") != f {
+		t.Errorf("Discover(file) = %+v, %v", got, err)
+	}
+	if _, err := Discover("/nonexistent/x.yaml"); err == nil {
+		t.Error("explicit missing path must be an error")
+	}
+}
+
+func TestDiscoverDir(t *testing.T) {
+	isolateDefaults(t)
+	dir := t.TempDir()
+	b := write(t, dir, "b.yml", "name: b\n")
+	a := write(t, dir, "a.yaml", "name: a\n")
+	write(t, dir, ".hidden.yaml", "name: h\n")
+	write(t, dir, "notes.txt", "x")
+	write(t, dir, "sub/c.yaml", "name: c\n")
+	if err := os.Mkdir(filepath.Join(dir, "d.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Discover(dir)
+	if err != nil || !got.Dir || got.Path != dir || strings.Join(got.Files, ",") != a+","+b {
+		t.Errorf("Discover(dir) = %+v, %v", got, err)
+	}
+}
+
+func TestDiscoverEmptyDir(t *testing.T) {
+	isolateDefaults(t)
+	dir := t.TempDir()
+	write(t, dir, "conf.d/a.yaml", "rules: []\n")
+	if _, err := Discover(dir); err == nil || !strings.Contains(err.Error(), "no config files") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestDiscoverDefaultOrder(t *testing.T) {
+	system, home := isolateDefaults(t)
+	homeDir := filepath.Join(home, ".config", "onecheck")
+	homeCfg := write(t, homeDir, "config.yaml", "name: home\n")
+	got, err := Discover("")
+	if err != nil || got.Path != homeDir || !got.Dir || got.Source != SourceDefault || got.Files[0] != homeCfg {
+		t.Errorf("empty system dir must fall through to home: %+v, %v", got, err)
+	}
+	sysCfg := write(t, system, "config.yaml", "name: sys\n")
+	if got, _ := Discover(""); got.Path != system || got.Files[0] != sysCfg {
+		t.Errorf("system dir must win: %+v", got)
+	}
+	envDir := t.TempDir()
+	write(t, envDir, "e.yaml", "name: e\n")
+	t.Setenv("ONECHECK_CONFIG", envDir)
+	if got, _ := Discover(""); got.Path != envDir || got.Source != SourceEnv || !got.Dir {
+		t.Errorf("env must beat defaults: %+v", got)
+	}
+	flag := write(t, t.TempDir(), "f.yaml", "name: f\n")
+	if got, _ := Discover(flag); got.Path != flag || got.Source != SourceFlag {
+		t.Errorf("flag must beat env: %+v", got)
+	}
+}
+
+func TestDiscoverNotFound(t *testing.T) {
+	system, home := isolateDefaults(t)
+	_, err := Discover("")
+	if err == nil || !strings.Contains(err.Error(), system) || !strings.Contains(err.Error(), filepath.Join(home, ".config", "onecheck")) || !strings.Contains(err.Error(), "--config") {
+		t.Errorf("error must list the directories tried, got %v", err)
 	}
 }

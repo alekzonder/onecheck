@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alekzonder/onecheck/internal/config"
 	"github.com/alekzonder/onecheck/internal/testmods"
 )
 
@@ -173,7 +174,7 @@ func TestHelpListsCommands(t *testing.T) {
 	if code != 0 {
 		t.Errorf("code = %d", code)
 	}
-	for _, want := range []string{"run", "validate", "paths", "version", "--config", "--log-level", "--only-failed", "Exit codes", "/etc/onecheck/config.yaml"} {
+	for _, want := range []string{"run", "validate", "paths", "version", "--config", "--log-level", "--only-failed", "Exit codes", "/etc/onecheck/"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)
 		}
@@ -255,4 +256,15 @@ func TestLogLevelFlagAlsoLogsToStderr(t *testing.T) {
 	if strings.Contains(out, "level=") {
 		t.Errorf("log lines leaked into stdout:\n%s", out)
 	}
+}
+
+// noDefaultConfigs makes the default config directories empty temp dirs, so
+// that configs of the machine running the tests are never picked up.
+func noDefaultConfigs(t *testing.T) (system, home string) {
+	t.Helper()
+	system, home = t.TempDir(), t.TempDir()
+	t.Cleanup(config.SetSystemDir(system))
+	t.Setenv("HOME", home)
+	t.Setenv("ONECHECK_CONFIG", "")
+	return system, home
 }

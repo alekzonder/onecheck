@@ -35,62 +35,150 @@ func Summarize(results []result.Result) Summary {
 	return s
 }
 
-// ExitCode is 0 when every result passed and 1 otherwise. It reflects the
-// raw status of this run, not the confirmed state.
-func ExitCode(results []result.Result) int {
-	for _, r := range results {
-		if !r.OK() {
-			return 1
+// Config is what one config contributed to a run: its results, or why it
+// could not run.
+type Config struct {
+	Name    string // the config's name; empty if it could not be loaded
+	Path    string // the config file
+	Error   string // why the config could not run; empty if it ran
+	Results []result.Result
+}
+
+// configJSON is an element of "configs" in the JSON output.
+type configJSON struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Error string `json:"error,omitempty"`
+}
+
+// ExitCode is 2 when a config could not run, else 1 when a result did not
+// pass, else 0. It reflects the raw status of this run, not the confirmed
+// state.
+func ExitCode(configs []Config) int {
+	code := 0
+	for _, c := range configs {
+		if c.Error != "" {
+			return 2
+		}
+		for _, r := range c.Results {
+			if !r.OK() {
+				code = 1
+			}
 		}
 	}
-	return 0
+	return code
 }
 
 // Write renders the results in the given format ("text" or "json"). With
 // onlyFailed, passing rules are left out of the list but not of the summary.
-func Write(w io.Writer, format string, onlyFailed bool, results []result.Result) error {
+// grouped prints the text output per config, for a directory of configs.
+func Write(w io.Writer, format string, onlyFailed, grouped bool, configs []Config) error {
+	all := []result.Result{}
 	shown := []result.Result{}
-	for _, r := range results {
-		if !onlyFailed || !r.OK() {
-			shown = append(shown, r)
-		}
+	meta := make([]configJSON, len(configs))
+	for i, c := range configs {
+		meta[i] = configJSON{Name: c.Name, Path: c.Path, Error: c.Error}
+		all = append(all, c.Results...)
+		shown = append(shown, visible(c.Results, onlyFailed)...)
 	}
-	summary := Summarize(results)
+	summary := Summarize(all)
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
 			Summary Summary         `json:"summary"`
+			Configs []configJSON    `json:"configs"`
 			Results []result.Result `json:"results"`
-		}{summary, shown})
+		}{summary, meta, shown})
 	case "text":
-		return writeText(w, summary, shown)
+		var b strings.Builder
+		if grouped {
+			writeGroups(&b, configs, onlyFailed)
+		} else {
+			writeRules(&b, shown, ruleWidth(shown))
+		}
+		if len(shown) > 0 || b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "%d rules: %d passed, %d failed, %d errors", summary.Total, summary.Passed, summary.Failed, summary.Errors)
+		if broken := brokenConfigs(configs); grouped && broken > 0 {
+			fmt.Fprintf(&b, "; %d of %d configs could not run", broken, len(configs))
+		}
+		b.WriteString("\n")
+		_, err := io.WriteString(w, b.String())
+		return err
 	}
 	return fmt.Errorf("unknown output format %q (expected text or json)", format)
 }
 
-func writeText(w io.Writer, summary Summary, shown []result.Result) error {
+func visible(results []result.Result, onlyFailed bool) []result.Result {
+	out := []result.Result{}
+	for _, r := range results {
+		if !onlyFailed || !r.OK() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func brokenConfigs(configs []Config) int {
+	n := 0
+	for _, c := range configs {
+		if c.Error != "" {
+			n++
+		}
+	}
+	return n
+}
+
+func ruleWidth(results []result.Result) int {
 	width := 0
-	for _, r := range shown {
+	for _, r := range results {
 		width = max(width, len(r.Rule))
 	}
-	var b strings.Builder
+	return width
+}
+
+// writeGroups prints a header and the rules of each config. A config with
+// nothing to show (only passing rules under onlyFailed) is left out.
+func writeGroups(b *strings.Builder, configs []Config, onlyFailed bool) {
+	width := 0
+	for _, c := range configs {
+		width = max(width, ruleWidth(c.Results))
+	}
+	first := true
+	for _, c := range configs {
+		shown := visible(c.Results, onlyFailed)
+		if c.Error == "" && len(shown) == 0 && onlyFailed {
+			continue
+		}
+		if !first {
+			b.WriteString("\n")
+		}
+		first = false
+		if c.Name != "" {
+			fmt.Fprintf(b, "== %s  %s\n", c.Name, c.Path)
+		} else {
+			fmt.Fprintf(b, "== %s\n", c.Path)
+		}
+		if c.Error != "" {
+			fmt.Fprintf(b, "ERROR  config: %s\n", c.Error)
+		}
+		writeRules(b, shown, width)
+	}
+}
+
+func writeRules(b *strings.Builder, shown []result.Result, width int) {
 	for _, r := range shown {
-		fmt.Fprintf(&b, "%-5s  %-*s  (%s, %dms)%s\n", strings.ToUpper(string(r.Status)), width, r.Rule, r.Module, r.DurationMS, stateNote(r))
+		fmt.Fprintf(b, "%-5s  %-*s  (%s, %dms)%s\n", strings.ToUpper(string(r.Status)), width, r.Rule, r.Module, r.DurationMS, stateNote(r))
 		for _, f := range r.Failures {
-			fmt.Fprintf(&b, "       %s\n", f.Message)
+			fmt.Fprintf(b, "       %s\n", f.Message)
 		}
 		if r.Error != nil {
-			fmt.Fprintf(&b, "       %s\n", *r.Error)
+			fmt.Fprintf(b, "       %s\n", *r.Error)
 		}
 	}
-	if len(shown) > 0 {
-		b.WriteString("\n")
-	}
-	fmt.Fprintf(&b, "%d rules: %d passed, %d failed, %d errors\n", summary.Total, summary.Passed, summary.Failed, summary.Errors)
-	_, err := io.WriteString(w, b.String())
-	return err
 }
 
 // stateNote explains the confirmed state when it is not obvious from the

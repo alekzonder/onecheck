@@ -100,11 +100,7 @@ func TestModuleInstallSearchUpdateRemove(t *testing.T) {
 }
 
 func TestModuleCommandsNeedADirectory(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("ONECHECK_CONFIG", "")
-	if _, err := os.Stat("/etc/onecheck/config.yaml"); err == nil {
-		t.Skip("a system config exists on this machine")
-	}
+	noDefaultConfigs(t)
 	code, _, errOut := execute("module", "list")
 	if code != 2 || !strings.Contains(errOut, "--modules-dir") {
 		t.Errorf("code=%d err=%q", code, errOut)

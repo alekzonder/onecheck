@@ -23,6 +23,9 @@ Events: files in the event queue (paths.events) whose expires_at has passed
 are removed. The queue is shared by all configs, so one config's logrotate
 cleans it for all of them. An event lives for events.ttl after it was written.
 
+With a directory of configs (--config <dir>, or no --config at all) the log
+of every config is rotated and every distinct event queue is cleaned once.
+
 Without flags both are done. Run it from cron, e.g. once a day.`
 
 const logrotateExample = `  onecheck logrotate
@@ -41,31 +44,66 @@ func (a *app) logrotateCmd() *cobra.Command {
 		Example: logrotateExample,
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
 			if !logs && !events {
 				logs, events = true, true
 			}
-			if logs {
-				if err := a.rotateLogs(cfg); err != nil {
-					return err
-				}
-			}
-			if events {
-				removed, err := rotate.Events(cfg.EventsDir(), time.Duration(cfg.Events.TTL), time.Now())
-				if err != nil {
-					return fmt.Errorf("cannot clean events: %w", err)
-				}
-				fmt.Fprintf(a.stdout, "events: removed %d expired from %s\n", removed, cfg.EventsDir())
-			}
-			return nil
+			return a.logrotate(logs, events)
 		},
 	}
 	cmd.Flags().BoolVar(&logs, "logs", false, "only rotate logs")
 	cmd.Flags().BoolVar(&events, "events", false, "only remove expired events")
 	return cmd
+}
+
+// logrotate rotates the log of every config and cleans each distinct event
+// queue once. In a directory a broken config is reported and the rest is
+// still done.
+func (a *app) logrotate(logs, events bool) error {
+	target, list, err := a.loadConfigs()
+	if err != nil {
+		return err
+	}
+	bad := 0
+	fail := func(path string, err error) error {
+		if err == nil || !target.Dir {
+			return err
+		}
+		fmt.Fprintf(a.stderr, "onecheck: %s\n", configError(path, err))
+		bad++
+		return nil
+	}
+	cleaned := map[string]bool{}
+	for _, l := range list {
+		if l.err != nil {
+			bad++
+			fmt.Fprintf(a.stderr, "onecheck: %s\n", configError(l.path, l.err))
+			continue
+		}
+		if logs {
+			if err := fail(l.path, a.rotateLogs(l.cfg)); err != nil {
+				return err
+			}
+		}
+		if events && !cleaned[l.cfg.EventsDir()] {
+			cleaned[l.cfg.EventsDir()] = true
+			if err := fail(l.path, a.cleanEvents(l.cfg)); err != nil {
+				return err
+			}
+		}
+	}
+	if bad > 0 {
+		return fmt.Errorf("%d of %d configs in %s could not be handled", bad, len(list), target.Path)
+	}
+	return nil
+}
+
+func (a *app) cleanEvents(cfg *config.Config) error {
+	removed, err := rotate.Events(cfg.EventsDir(), time.Duration(cfg.Events.TTL), time.Now())
+	if err != nil {
+		return fmt.Errorf("cannot clean events: %w", err)
+	}
+	fmt.Fprintf(a.stdout, "events: removed %d expired from %s\n", removed, cfg.EventsDir())
+	return nil
 }
 
 // rotateLogs rotates under the run lock, so that a log is never compressed

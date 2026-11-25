@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -60,20 +62,51 @@ func githubClient() github.Client {
 	return github.New(os.Getenv("ONECHECK_GITHUB_API"), os.Getenv("GITHUB_TOKEN"))
 }
 
-// manager resolves the modules directory and the default repositories.
+// manager resolves the modules directory and the default repositories. A
+// directory of configs must agree on paths.modules unless --modules-dir is
+// given; their repositories are merged.
 func (a *app) manager(o *moduleOptions) (*install.Manager, []string, error) {
 	m := &install.Manager{Client: githubClient(), Dir: o.dir, OS: runtime.GOOS, Arch: runtime.GOARCH}
-	repos := []string{install.CoreRepo}
-	cfg, err := a.loadConfig()
+	dirs, repos, err := a.moduleSettings()
 	if err == nil {
-		repos = cfg.Modules.Repos
-		if m.Dir == "" {
-			m.Dir = cfg.Paths.Modules
+		if m.Dir == "" && len(dirs) > 1 {
+			return nil, nil, fmt.Errorf("the configs use different modules directories (%s); pass --modules-dir", strings.Join(dirs, ", "))
 		}
-	} else if m.Dir == "" || a.configPath != "" {
+		if m.Dir == "" {
+			m.Dir = dirs[0]
+		}
+		return m, repos, nil
+	}
+	if m.Dir == "" || a.configPath != "" {
 		return nil, nil, fmt.Errorf("%w\n(or pass --modules-dir <dir> to manage modules without a config)", err)
 	}
-	return m, repos, nil
+	return m, []string{install.CoreRepo}, nil
+}
+
+// moduleSettings is every paths.modules and modules.repos of the configs
+// that could be loaded; dirs is never empty when err is nil.
+func (a *app) moduleSettings() (dirs, repos []string, err error) {
+	_, list, err := a.loadConfigs()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, l := range list {
+		if l.cfg == nil {
+			continue
+		}
+		if !slices.Contains(dirs, l.cfg.Paths.Modules) {
+			dirs = append(dirs, l.cfg.Paths.Modules)
+		}
+		for _, r := range l.cfg.Modules.Repos {
+			if !slices.Contains(repos, r) {
+				repos = append(repos, r)
+			}
+		}
+	}
+	if len(dirs) == 0 {
+		return nil, nil, errors.New(configError(list[0].path, list[0].err))
+	}
+	return dirs, repos, nil
 }
 
 func (a *app) moduleListCmd(o *moduleOptions) *cobra.Command {
