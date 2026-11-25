@@ -230,7 +230,7 @@ func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.R
 	res.Consecutive = next.Consecutive(res.OK())
 	if transition != "" {
 		res.Transition = &transition
-		event := newEvent(cfg, rule, res, from, next, now)
+		event := newEvent(cfg, rule, res, prev, next, now)
 		if err := st.WriteEvent(event); err != nil {
 			return fmt.Errorf("cannot write event: %w", err)
 		}
@@ -253,8 +253,13 @@ func record(st *store.Store, cfg *config.Config, rule config.Rule, res *result.R
 	return nil
 }
 
-// newEvent builds the event of the transition named in res.Transition.
-func newEvent(cfg *config.Config, rule config.Rule, res *result.Result, from string, next state.State, now time.Time) result.Event {
+// newEvent builds the event of the transition named in res.Transition; prev
+// is the state before the run (nil for a new rule).
+func newEvent(cfg *config.Config, rule config.Rule, res *result.Result, prev *state.State, next state.State, now time.Time) result.Event {
+	from := state.Pass
+	if prev != nil {
+		from = prev.State
+	}
 	event := result.Event{
 		ID:           store.EventID(now, cfg.Name, res.Rule, *res.Transition),
 		Config:       cfg.Name,
@@ -272,6 +277,11 @@ func newEvent(cfg *config.Config, rule config.Rule, res *result.Result, from str
 	if rule.EventParams {
 		event.Params = rule.RawParams
 		event.OutputFields = append(event.OutputFields, rule.EventOutput...)
+	}
+	if event.Transition == state.TransitionRecovered && prev != nil {
+		// Since of the fail state is when the failure began; reminders
+		// do not move it.
+		event.FailedSince = prev.Since
 	}
 	return event
 }

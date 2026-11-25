@@ -80,6 +80,9 @@ type Event struct {
 	// Since is when the confirmed state the event reports (To) began: At
 	// for a change of state, the start of the problem for a reminder.
 	Since time.Time `json:"since"`
+	// FailedSince is when the failure that a recovered event ends began:
+	// the At of its fail event. Zero, and not written, for other events.
+	FailedSince time.Time `json:"failed_since,omitzero"`
 	// Params is the rule's params as written in the config, before ${VAR}
 	// expansion; null when the rule has none or hides them.
 	Params map[string]any `json:"params"`

@@ -267,3 +267,115 @@ func TestShortRemindEveryIsReported(t *testing.T) {
 		}
 	})
 }
+
+// rawEvents returns the event files of that transition as plain JSON objects,
+// to see which keys are written.
+func (e *env) rawEvents(transition string) []map[string]any {
+	e.t.Helper()
+	files, _ := filepath.Glob(filepath.Join(e.dir, "events", "*-"+transition+".json"))
+	var out []map[string]any
+	for _, f := range files {
+		var ev map[string]any
+		if err := json.Unmarshal(mustRead(e.t, f), &ev); err != nil {
+			e.t.Fatalf("%s: %v", f, err)
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+func TestRecoveredEventCarriesFailedSince(t *testing.T) {
+	e := newEnv(t)
+	rules := goneRule("")
+	e.run(rules, Options{})
+	e.touch("missing.txt", "x")
+	e.run(rules, Options{})
+	failed, recovered := e.byTransition("fail"), e.byTransition("recovered")
+	if len(failed) != 1 || len(recovered) != 1 {
+		t.Fatalf("events = %+v", e.events())
+	}
+	if !recovered[0].FailedSince.Equal(failed[0].At) {
+		t.Errorf("failed_since = %s, want the time of the fail event %s", recovered[0].FailedSince, failed[0].At)
+	}
+	if !recovered[0].Since.Equal(recovered[0].At) {
+		t.Errorf("since of recovered = %s, must stay equal to at %s", recovered[0].Since, recovered[0].At)
+	}
+}
+
+func TestFailedSinceSurvivesReminders(t *testing.T) {
+	e := newEnv(t)
+	rules := goneRule("    remind_every: 1h\n")
+	e.run(rules, Options{})
+	failedAt := e.byTransition("fail")[0].At
+	for i := range 2 {
+		e.backdate("gone", 61*time.Minute)
+		if res := e.run(rules, Options{}); res[0].Transition == nil || *res[0].Transition != "reminder" {
+			t.Fatalf("run %d: want a reminder, got %+v", i+1, res[0])
+		}
+	}
+	// Both reminders fall in one second and share an event ID, so one file
+	// is left; it is enough to compare with.
+	reminders := e.byTransition("reminder")
+	e.touch("missing.txt", "x")
+	e.run(rules, Options{})
+	recovered := e.byTransition("recovered")
+	if len(recovered) != 1 {
+		t.Fatalf("events = %+v", e.events())
+	}
+	if want := failedAt.Add(-122 * time.Minute); !recovered[0].FailedSince.Equal(want) {
+		t.Errorf("failed_since = %s, want the start of the failure %s", recovered[0].FailedSince, want)
+	}
+	for _, r := range reminders {
+		if recovered[0].FailedSince.Equal(r.At) {
+			t.Errorf("failed_since is the time of a reminder %s", r.At)
+		}
+	}
+}
+
+func TestFailedSinceOnlyInRecovered(t *testing.T) {
+	e := newEnv(t)
+	rules := goneRule("    remind_every: 1h\n")
+	e.run(rules, Options{})
+	e.backdate("gone", 61*time.Minute)
+	e.run(rules, Options{})
+	e.touch("missing.txt", "x")
+	e.run(rules, Options{})
+	for _, transition := range []string{"fail", "reminder"} {
+		evs := e.rawEvents(transition)
+		if len(evs) != 1 {
+			t.Fatalf("%s events = %v", transition, evs)
+		}
+		if _, ok := evs[0]["failed_since"]; ok {
+			t.Errorf("%s event has failed_since: %v", transition, evs[0])
+		}
+	}
+	if evs := e.rawEvents("recovered"); len(evs) != 1 || evs[0]["failed_since"] == nil {
+		t.Errorf("recovered event has no failed_since: %v", evs)
+	}
+}
+
+func TestFailedSinceWhenRedacted(t *testing.T) {
+	e := newEnv(t)
+	rules := goneRule("    event_params: false\n")
+	e.run(rules, Options{})
+	e.touch("missing.txt", "x")
+	e.run(rules, Options{})
+	recovered := e.byTransition("recovered")
+	if len(recovered) != 1 || !recovered[0].Redacted || recovered[0].FailedSince.IsZero() {
+		t.Errorf("a redacted recovered event still carries failed_since: %+v", recovered)
+	}
+}
+
+func TestRecoveredFromAStateFileOfAnOlderVersion(t *testing.T) {
+	e := newEnv(t)
+	since := time.Now().UTC().Add(-3 * time.Hour)
+	e.writeState("gone", map[string]any{
+		"state": "fail", "since": since.Format(time.RFC3339Nano), "consecutive_pass": 0, "consecutive_fail": 2,
+	})
+	e.touch("missing.txt", "x")
+	e.run(goneRule(""), Options{})
+	recovered := e.byTransition("recovered")
+	if len(recovered) != 1 || !recovered[0].FailedSince.Equal(since) {
+		t.Errorf("recovered = %+v, want failed_since %s", recovered, since)
+	}
+}
