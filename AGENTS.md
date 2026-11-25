@@ -25,6 +25,10 @@ Rules for anyone (human or AI agent) changing this repository.
   route, `[Checks](/checks#anchor)`, never by `.md` path; `make docs-build`
   must pass when `docs/` changes. See "Documentation site" in
   `docs/development.md`.
+- A docs page sets its title in the front matter (`title: ...`) and has no
+  level-1 heading (`# Title`): Blume renders the title itself, so `# Title`
+  shows it twice. Sections start at `##`. `make docs-build` fails on a `# `
+  line outside code blocks.
 
 ## Repository map
 

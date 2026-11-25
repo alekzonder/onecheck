@@ -1,4 +1,6 @@
-# Output and results
+---
+title: Output and results
+---
 
 A run reports its outcome in four places:
 

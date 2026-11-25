@@ -28,10 +28,21 @@ expect 0 route page.md 'See [checks](/checks#gt-gte-lt-lte).'
 expect 0 external page.md 'See [syntax](https://github.com/tidwall/gjson/blob/master/SYNTAX.md).'
 expect 0 superpowers superpowers/specs/x.md 'See [checks](../../checks.md).'
 expect 0 node-modules node_modules/blume/README.md 'See [a](a.md).'
+expect 1 h1 page.md '# Title'
+expect 1 h1-after-front-matter page.md $'---\ntitle: Title\n---\n\n# Title'
+expect 0 front-matter page.md $'---\ntitle: Title\n---\n\n## Section'
+expect 0 h1-in-code page.md $'## Example\n\n```sh\n# a comment\n```'
+expect 0 h1-superpowers superpowers/specs/x.md '# Design'
 
 if ! grep -q 'page.md:1:' "$tmp/relative.out"; then
   echo "FAIL relative: output does not name file and line" >&2
   cat "$tmp/relative.out" >&2
+  fail=1
+fi
+
+if ! grep -q 'page.md:1: # Title' "$tmp/h1.out"; then
+  echo "FAIL h1: output does not name file and line" >&2
+  cat "$tmp/h1.out" >&2
   fail=1
 fi
 

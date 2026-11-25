@@ -1,4 +1,6 @@
-# Development
+---
+title: Development
+---
 
 Rules for contributors (commit messages, merges, limits) are in
 [AGENTS.md](https://github.com/alekzonder/onecheck/blob/main/AGENTS.md). This page is about how to build, test and release.
@@ -201,6 +203,20 @@ the base `/onecheck` itself; it does not rewrite relative `.md` links, so they
 would break on the site. `scripts/docs-check-links.sh` fails the build when one
 appears. Links from outside the site (README, CLI messages) use the full URL
 `https://alekzonder.github.io/onecheck/<route>`.
+
+**A page's title goes in the front matter, never in a `# ` heading:**
+
+```markdown
+---
+title: Getting started
+---
+
+## Install
+```
+
+Blume renders the title above the page itself, so a `# Getting started`
+line would show it a second time. Sections start at `##`. The same script
+fails the build on a `# ` line outside code blocks.
 
 Preview locally with `cd docs && npm ci && npm run dev`.
 `make docs-build` runs the link check, `blume doctor` and `blume build`; CI

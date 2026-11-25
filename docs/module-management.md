@@ -1,4 +1,6 @@
-# Module management
+---
+title: Module management
+---
 
 A module is an executable file named `onecheck-<name>` in the modules
 directory (`paths.modules`). onecheck reads that directory on every run:

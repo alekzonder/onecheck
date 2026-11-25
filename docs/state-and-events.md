@@ -1,4 +1,6 @@
-# State and events
+---
+title: State and events
+---
 
 onecheck does not only tell whether a check passes right now. For every rule
 it keeps a **confirmed state** between runs and records each change of that
